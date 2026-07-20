@@ -396,7 +396,6 @@ function App() {
 
       <footer>
         <strong>DocumentSync</strong>
-        <span>COMS3011A · Dean Feldman · 2803899</span>
       </footer>
     </div>
   );
