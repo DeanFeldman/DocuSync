@@ -1,0 +1,12 @@
+[project]
+name = "documentsync-api"
+version = "0.1.0"
+description = "DocumentSync Milestone 1 API"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
