@@ -56,8 +56,9 @@
         "filter": ["**/*"]
       }
     ],
-    "win": {
-      "target": ["nsis"]
+   "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -65,7 +66,9 @@
       "createStartMenuShortcut": true,
       "createDesktopShortcut": true,
       "shortcutName": "DocSync",
-      "uninstallDisplayName": "DocSync"
+      "uninstallDisplayName": "DocSync",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
   }
 }

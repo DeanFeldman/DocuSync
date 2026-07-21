@@ -26,6 +26,8 @@ import type {
   ViewerElement,
 } from "./types";
 
+import docSyncLogo from "./assets/Docsync LOGO.png";
+
 type BusyAction = "upload" | "view" | "matches" | "preview" | "generate" | null;
 
 function readableBytes(bytes: number): string {
@@ -321,13 +323,14 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="DocumentSync home">
-          <span className="brand-mark" aria-hidden="true">DS</span>
-          <span>
-            <strong>DocumentSync</strong>
-            <small>Controlled document workspace</small>
-          </span>
+        <a className="brand" href="#top" aria-label="DocSync home">
+          <img
+            className="brand-logo"
+            src={docSyncLogo}
+            alt="DocSync"
+          />
         </a>
+
         <div className="topbar-actions">
           <span className="release-pill">Desktop v1</span>
           {documentSet && (
