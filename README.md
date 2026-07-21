@@ -183,4 +183,14 @@ See `docs/api.md` for request and response details.
 7. Add reviewer approval and immutable audit events.
 8. Add a backlog of Document Sets to come back to 
 
-
+extras
+Saved document-set library
+History screen and undo
+Real before/after diff
+Add/remove documents from existing sets
+Tag-triggered GitHub Release workflow
+Table-cell support
+Direct selection from the Word layout
+Fuzzy match suggestions
+Global workspace search
+Authentication and cloud storage only when moving beyond local use
