@@ -1,0 +1,59 @@
+name: DocSync desktop
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.txt
+      - run: npm ci
+      - run: python -m pip install -r apps/api/requirements.txt
+      - run: npm test
+      - run: npm run build:web
+
+  windows-installer:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-build.txt
+      - run: npm ci
+      - run: python -m pip install -r apps/api/requirements-build.txt
+      - run: npm test
+      - run: npm run build:web
+      - run: npm run dist:win
+      - name: Create installer checksum
+        shell: pwsh
+        run: Get-FileHash release/v1/*.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $($_.Path | Split-Path -Leaf)" } | Set-Content release/v1/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DocSync-Windows-installer
+          path: |
+            release/v1/*.exe
+            release/v1/SHA256SUMS.txt
+          retention-days: 14

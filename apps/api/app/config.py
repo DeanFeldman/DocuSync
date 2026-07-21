@@ -13,6 +13,9 @@ class Settings:
     cors_origins: tuple[str, ...]
     max_file_bytes: int
     max_files_per_set: int
+    web_dist_dir: Path
+    render_script: Path
+    session_token: str
 
 
 def _build_settings() -> Settings:
@@ -24,6 +27,13 @@ def _build_settings() -> Settings:
 
     default_database = f"sqlite:///{(data_dir / 'documentsync.db').as_posix()}"
     database_url = os.getenv("DOCUMENTSYNC_DATABASE_URL", default_database)
+    raw_web_dist = os.getenv("DOCUMENTSYNC_WEB_DIST", str(api_dir.parent / "web" / "dist"))
+    web_dist_dir = Path(raw_web_dist).resolve()
+    raw_render_script = os.getenv(
+        "DOCUMENTSYNC_RENDER_SCRIPT",
+        str(api_dir / "scripts" / "render_docx_to_pdf.ps1"),
+    )
+    render_script = Path(raw_render_script).resolve()
     cors_origins = tuple(
         origin.strip()
         for origin in os.getenv(
@@ -48,6 +58,9 @@ def _build_settings() -> Settings:
         cors_origins=cors_origins,
         max_file_bytes=int(os.getenv("DOCUMENTSYNC_MAX_FILE_BYTES", str(10 * 1024 * 1024))),
         max_files_per_set=int(os.getenv("DOCUMENTSYNC_MAX_FILES_PER_SET", "20")),
+        web_dist_dir=web_dist_dir,
+        render_script=render_script,
+        session_token=os.getenv("DOCUMENTSYNC_SESSION_TOKEN", ""),
     )
 
 

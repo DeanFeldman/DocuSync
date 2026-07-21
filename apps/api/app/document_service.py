@@ -56,7 +56,7 @@ def element_type_for_style(style_name: str | None) -> str:
 
 
 def _layout_pages(elements: list[DocumentElement]) -> list[dict]:
-    """Create honest, deterministic logical pages for the structured Phase 2 preview.
+    """Create honest, deterministic logical pages for the structured selection preview.
 
     python-docx does not calculate Word pagination. These page groups give the browser a
     stable scrolling surface without pretending to reproduce Word's layout engine.
@@ -381,7 +381,7 @@ def render_document_with_word(session: Session, document: DocumentRecord) -> dic
     output_path = rendered_pdf_path(document)
     if not output_path.exists() or output_path.stat().st_size == 0:
         powershell = shutil.which("powershell.exe") or shutil.which("powershell")
-        render_script = settings.api_dir / "scripts" / "render_docx_to_pdf.ps1"
+        render_script = settings.render_script
         if powershell is None or not render_script.exists():
             raise HTTPException(
                 status_code=503,

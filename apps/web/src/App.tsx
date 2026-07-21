@@ -152,7 +152,7 @@ function App() {
       const uploaded = await uploadDocumentSet(setName, files);
       if (uploaded.documents.some((document) => !document.version_id)) {
         throw new Error(
-          "The running backend is an older DocumentSync version. Start the Phase 2 API on port 8001 and try again.",
+          "The local document service is an older DocumentSync version. Close and reopen the application, then try again.",
         );
       }
       setDocumentSet(uploaded);
@@ -329,7 +329,7 @@ function App() {
           </span>
         </a>
         <div className="topbar-actions">
-          <span className="prototype-pill">Phase 2 prototype</span>
+          <span className="release-pill">Desktop v1</span>
           {documentSet && (
             <button type="button" className="quiet-button" onClick={resetWorkspace}>
               New document set
@@ -354,7 +354,7 @@ function App() {
                 <span>Immutable originals</span>
               </div>
             </div>
-            <div className="workflow-card" aria-label="Phase 2 workflow">
+            <div className="workflow-card" aria-label="Document editing workflow">
               <div><span>1</span><p><strong>Open</strong><small>Scroll through each document</small></p></div>
               <div><span>2</span><p><strong>Select</strong><small>Choose recognised content</small></p></div>
               <div><span>3</span><p><strong>Review</strong><small>Confirm every exact match</small></p></div>
@@ -672,34 +672,8 @@ function App() {
               <div><button type="button" className="quiet-button" onClick={() => setPreview(null)} disabled={busyAction === "generate"}>Back to edit</button><button type="button" className="primary-button" onClick={() => void handleGenerate()} disabled={busyAction === "generate"}>{busyAction === "generate" ? "Applying changes…" : "Apply changes and continue"}</button></div>
             </footer>
           </section>
-        )}
-
-        {generation && (
-          <section className="success-section" aria-live="polite">
-            <div className="success-mark" aria-hidden="true">✓</div>
-            <div>
-              <p className="eyebrow">Generation complete</p>
-              <h2>Your updated documents are ready.</h2>
-              <p>
-                {generation.files.length} new DOCX file{generation.files.length === 1 ? "" : "s"} were
-                created. The originals were not overwritten.
-              </p>
-              <ul>
-                {generation.files.map((file) => (
-                  <li key={`${file.source_document_id}-${file.name}`}>{file.name}</li>
-                ))}
-              </ul>
-            </div>
-            <a className="download-button" href={absoluteDownloadUrl(generation.download_url)}>
-              Download ZIP
-            </a>
-          </section>
-        )}
-      </main>
-
-      <footer>
-        <strong>DocumentSync</strong>
-      </footer>
+        </div>
+      )}
     </div>
   );
 }

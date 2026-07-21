@@ -1,0 +1,71 @@
+{
+  "name": "docsync-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DocSync Windows desktop application for coordinated DOCX editing",
+  "author": "Dean Feldman",
+  "license": "UNLICENSED",
+  "main": "apps/desktop/main.cjs",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "prestart": "npm run build:web",
+    "start": "electron .",
+    "start:api": "python apps/api/desktop_backend.py",
+    "build:web": "npm run build --workspace documentsync-web",
+    "build:api:win": "python -m PyInstaller --noconfirm --clean --distpath apps/api/dist --workpath apps/api/build apps/api/docsync-api.spec",
+    "build:desktop": "npm run build:web && npm run build:api:win",
+    "test": "npm run test:node && npm run test:api",
+    "test:node": "node --test apps/template-api/tests/*.test.cjs apps/desktop-ui/tests/*.test.mjs apps/desktop/tests/*.test.cjs",
+    "test:api": "python -m pytest apps/api",
+    "prepack:win": "npm run build:desktop",
+    "pack:win": "electron-builder --win dir",
+    "predist:win": "npm run build:desktop",
+    "dist:win": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "za.co.docsync.desktop",
+    "productName": "DocSync",
+    "asar": true,
+    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release/v1"
+    },
+    "files": [
+      "apps/desktop/main.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "apps/api/dist/docsync-api",
+        "to": "phase2-api",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "apps/api/scripts/render_docx_to_pdf.ps1",
+        "to": "phase2-api/scripts/render_docx_to_pdf.ps1"
+      },
+      {
+        "from": "apps/web/dist",
+        "to": "web",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createStartMenuShortcut": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "DocSync",
+      "uninstallDisplayName": "DocSync"
+    }
+  }
+}
