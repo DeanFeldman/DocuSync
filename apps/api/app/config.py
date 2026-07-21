@@ -27,7 +27,11 @@ def _build_settings() -> Settings:
     cors_origins = tuple(
         origin.strip()
         for origin in os.getenv(
-            "DOCUMENTSYNC_CORS_ORIGINS", "http://localhost:5173"
+            "DOCUMENTSYNC_CORS_ORIGINS",
+            (
+                "http://localhost:5173,http://localhost:5174,"
+                "http://127.0.0.1:5173,http://127.0.0.1:5174"
+            ),
         ).split(",")
         if origin.strip()
     )
@@ -35,6 +39,7 @@ def _build_settings() -> Settings:
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "originals").mkdir(parents=True, exist_ok=True)
     (data_dir / "generated").mkdir(parents=True, exist_ok=True)
+    (data_dir / "renders").mkdir(parents=True, exist_ok=True)
 
     return Settings(
         api_dir=api_dir,

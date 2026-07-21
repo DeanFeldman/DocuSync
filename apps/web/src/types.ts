@@ -1,8 +1,10 @@
 export interface DocumentSummary {
   id: string;
+  version_id: string;
   name: string;
   checksum_sha256: string;
   element_count: number;
+  view_url: string;
 }
 
 export interface LinkMember {
@@ -10,8 +12,54 @@ export interface LinkMember {
   document_id: string;
   document_name: string;
   paragraph_index: number;
+  element_type: "paragraph" | "heading" | "list_item";
   text: string;
   style_name: string | null;
+}
+
+export interface ViewerElement {
+  id: string;
+  document_id: string;
+  paragraph_index: number;
+  element_type: "paragraph" | "heading" | "list_item";
+  text: string;
+  style_name: string | null;
+  page_number: number;
+}
+
+export interface ViewerPage {
+  page_number: number;
+  elements: ViewerElement[];
+}
+
+export interface DocumentView {
+  document_id: string;
+  version_id: string;
+  document_set_id: string;
+  document_name: string;
+  render_status: "ready" | "rendering" | "failed" | string;
+  render_mode: "word_pdf" | "structured" | string;
+  pagination: "word" | "estimated" | string;
+  page_count: number;
+  notice: string;
+  pdf_url?: string;
+  pages: ViewerPage[];
+}
+
+export interface MatchDiscovery {
+  source: {
+    element_id: string;
+    document_id: string;
+    document_name: string;
+    paragraph_index: number;
+    element_type: string;
+    text: string;
+    style_name: string | null;
+  };
+  link_group: LinkGroup | null;
+  exact_match_count: number;
+  similar_matches: LinkMember[];
+  similarity_status: "not_enabled" | string;
 }
 
 export interface LinkGroup {
@@ -32,7 +80,9 @@ export interface DocumentSetResponse {
 }
 
 export interface PreviewChange {
+  element_id: string;
   paragraph_index: number;
+  element_type: string;
   before: string;
   after: string;
 }
@@ -45,6 +95,7 @@ export interface PreviewDocument {
 
 export interface PreviewResponse {
   link_group_id: string;
+  source_element_id: string | null;
   replacement_text: string;
   affected_document_count: number;
   affected_location_count: number;
@@ -59,4 +110,5 @@ export interface GenerationResponse {
     name: string;
   }>;
   download_url: string;
+  document_set: DocumentSetResponse;
 }

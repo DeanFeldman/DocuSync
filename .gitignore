@@ -14,10 +14,18 @@ yarn-error.log*
 pnpm-debug.log*
 dist/
 **/dist/
+*.tsbuildinfo
+.npm-cache*/
 
 # Environment and local data
 .env
 apps/api/data/
+apps/api/data-browser-test/
+browser-*.log
+phase2-api.*.log
+.browser-artifacts/
+.test-tmp-root/
+pytest-cache-files-*/
 
 # IDE / OS
 .vscode/

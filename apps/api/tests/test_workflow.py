@@ -28,6 +28,18 @@ def make_docx(building: str, address: str, shared: str) -> bytes:
     return stream.getvalue()
 
 
+def make_typed_docx(title: str, shared: str, shared_is_heading: bool) -> bytes:
+    stream = io.BytesIO()
+    document = Document()
+    document.add_heading(title, level=1)
+    if shared_is_heading:
+        document.add_heading(shared, level=2)
+    else:
+        document.add_paragraph(shared)
+    document.save(stream)
+    return stream.getvalue()
+
+
 def load_test_app(tmp_path: Path):
     os.environ["DOCUMENTSYNC_DATA_DIR"] = str(tmp_path / "data")
     os.environ["DOCUMENTSYNC_DATABASE_URL"] = f"sqlite:///{tmp_path / 'test.db'}"
@@ -54,6 +66,16 @@ def test_exact_match_preview_generation_and_original_immutability(tmp_path: Path
 
     app = load_test_app(tmp_path)
     with TestClient(app) as client:
+        preflight = client.options(
+            "/api/document-sets",
+            headers={
+                "Origin": "http://localhost:5174",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        assert preflight.status_code == 200
+        assert preflight.headers["access-control-allow-origin"] == "http://localhost:5174"
+
         response = client.post(
             "/api/document-sets",
             data={"name": "Building agreements"},
@@ -74,6 +96,41 @@ def test_exact_match_preview_generation_and_original_immutability(tmp_path: Path
         )
         assert matching_group["document_count"] == 3
 
+        document_view = client.get(payload["documents"][0]["view_url"])
+        assert document_view.status_code == 200
+        assert document_view.json()["render_status"] == "ready"
+        assert document_view.json()["pagination"] == "estimated"
+        assert any(
+            element["id"]
+            for page in document_view.json()["pages"]
+            for element in page["elements"]
+        )
+
+        config = importlib.import_module("app.config")
+        rendered_path = (
+            config.settings.data_dir
+            / "renders"
+            / payload["id"]
+            / f"{payload['documents'][0]['version_id']}.pdf"
+        )
+        rendered_path.parent.mkdir(parents=True, exist_ok=True)
+        rendered_path.write_bytes(b"%PDF-1.4\n% DocumentSync cached render fixture\n")
+        rendered = client.post(
+            f"/api/documents/{payload['documents'][0]['version_id']}/render"
+        )
+        assert rendered.status_code == 200, rendered.text
+        assert rendered.json()["render_mode"] == "word_pdf"
+        assert rendered.json()["pagination"] == "word"
+        pdf_response = client.get(rendered.json()["pdf_url"])
+        assert pdf_response.status_code == 200
+        assert pdf_response.headers["content-type"] == "application/pdf"
+
+        source_element_id = matching_group["members"][0]["element_id"]
+        matches = client.get(f"/api/document-elements/{source_element_id}/matches")
+        assert matches.status_code == 200
+        assert matches.json()["exact_match_count"] == 2
+        assert matches.json()["link_group"]["id"] == matching_group["id"]
+
         preview = client.post(
             f"/api/document-sets/{payload['id']}/preview",
             json={
@@ -93,15 +150,57 @@ def test_exact_match_preview_generation_and_original_immutability(tmp_path: Path
             },
         )
         assert generated.status_code == 201, generated.text
-        download = client.get(generated.json()["download_url"])
+        updated_set = generated.json()["document_set"]
+        refreshed_group = next(
+            group
+            for group in updated_set["link_groups"]
+            if group["representative_text"] == replacement
+        )
+        refreshed_view = client.get(updated_set["documents"][0]["view_url"])
+        assert refreshed_view.status_code == 200
+        assert any(
+            element["text"] == replacement
+            for page in refreshed_view.json()["pages"]
+            for element in page["elements"]
+        )
+
+        current_docx = client.get(
+            f"/api/documents/{updated_set['documents'][0]['id']}/download"
+        )
+        assert current_docx.status_code == 200
+        current_document = Document(io.BytesIO(current_docx.content))
+        assert replacement in "\n".join(
+            paragraph.text for paragraph in current_document.paragraphs
+        )
+
+        second_replacement = "The building manager must submit the report every Monday."
+        second_generation = client.post(
+            f"/api/document-sets/{payload['id']}/generate",
+            json={
+                "link_group_id": refreshed_group["id"],
+                "replacement_text": second_replacement,
+            },
+        )
+        assert second_generation.status_code == 201, second_generation.text
+        assert any(
+            group["representative_text"] == second_replacement
+            for group in second_generation.json()["document_set"]["link_groups"]
+        )
+        download = client.get(second_generation.json()["download_url"])
         assert download.status_code == 200
+
+        history = client.get(f"/api/document-sets/{payload['id']}/history")
+        assert history.status_code == 200
+        assert len(history.json()["events"]) == 2
+        assert history.json()["events"][0]["target_count"] == 3
+        assert history.json()["events"][0]["version_count"] == 3
 
     with zipfile.ZipFile(io.BytesIO(download.content)) as archive:
         assert len(archive.namelist()) == 3
         for member_name in archive.namelist():
             updated = Document(io.BytesIO(archive.read(member_name)))
             all_text = "\n".join(paragraph.text for paragraph in updated.paragraphs)
-            assert replacement in all_text
+            assert second_replacement in all_text
             building_letter = member_name.split("-")[1]
             assert f"Building {building_letter}" in all_text
 
@@ -110,3 +209,121 @@ def test_exact_match_preview_generation_and_original_immutability(tmp_path: Path
     assert len(stored_files) == 3
     stored_hashes = {hashlib.sha256(path.read_bytes()).hexdigest() for path in stored_files}
     assert stored_hashes == set(original_hashes.values())
+
+
+def test_explicit_target_confirmation_controls_preview_and_generation(tmp_path: Path) -> None:
+    shared = "The fire register must be reviewed every Friday."
+    replacement = "The fire register must be reviewed before noon every Friday."
+    originals = {
+        "Building-A.docx": make_docx("Building A", "1 Alpha Road", shared),
+        "Building-B.docx": make_docx("Building B", "2 Beta Avenue", shared),
+        "Building-C.docx": make_docx("Building C", "3 Gamma Street", shared),
+    }
+
+    app = load_test_app(tmp_path)
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/api/document-sets",
+            data={"name": "Safety agreements"},
+            files=[
+                (
+                    "files",
+                    (
+                        name,
+                        io.BytesIO(payload),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                )
+                for name, payload in originals.items()
+            ],
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        document_set = uploaded.json()
+        group = next(
+            item for item in document_set["link_groups"] if item["representative_text"] == shared
+        )
+        members_by_name = {member["document_name"]: member for member in group["members"]}
+        source_id = members_by_name["Building-A.docx"]["element_id"]
+        included_ids = [
+            source_id,
+            members_by_name["Building-B.docx"]["element_id"],
+        ]
+        request = {
+            "link_group_id": group["id"],
+            "source_element_id": source_id,
+            "included_element_ids": included_ids,
+            "replacement_text": replacement,
+        }
+
+        preview = client.post(
+            f"/api/document-sets/{document_set['id']}/preview",
+            json=request,
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["affected_document_count"] == 2
+        assert {item["document_name"] for item in preview.json()["documents"]} == {
+            "Building-A.docx",
+            "Building-B.docx",
+        }
+
+        source_excluded = client.post(
+            f"/api/document-sets/{document_set['id']}/preview",
+            json={**request, "included_element_ids": included_ids[1:]},
+        )
+        assert source_excluded.status_code == 422
+
+        outsider = client.post(
+            f"/api/document-sets/{document_set['id']}/preview",
+            json={**request, "included_element_ids": [source_id, "not-a-group-member"]},
+        )
+        assert outsider.status_code == 422
+
+        generated = client.post(
+            f"/api/document-sets/{document_set['id']}/generate",
+            json=request,
+        )
+        assert generated.status_code == 201, generated.text
+        assert {item["name"] for item in generated.json()["files"]} == {
+            "Building-A-updated.docx",
+            "Building-B-updated.docx",
+        }
+
+        history = client.get(f"/api/document-sets/{document_set['id']}/history")
+        assert history.status_code == 200
+        assert history.json()["events"][0]["target_count"] == 2
+        assert {item["document_name"] for item in history.json()["events"][0]["targets"]} == {
+            "Building-A.docx",
+            "Building-B.docx",
+        }
+
+
+def test_exact_text_does_not_link_incompatible_element_types(tmp_path: Path) -> None:
+    shared = "Quarterly reporting"
+    app = load_test_app(tmp_path)
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/api/document-sets",
+            data={"name": "Mixed structures"},
+            files=[
+                (
+                    "files",
+                    (
+                        "Heading.docx",
+                        io.BytesIO(make_typed_docx("Heading source", shared, True)),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                ),
+                (
+                    "files",
+                    (
+                        "Paragraph.docx",
+                        io.BytesIO(make_typed_docx("Paragraph source", shared, False)),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                ),
+            ],
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        assert all(
+            group["representative_text"] != shared for group in uploaded.json()["link_groups"]
+        )

@@ -121,6 +121,9 @@ class GenerationJob(Base):
     versions: Mapped[list[GeneratedVersion]] = relationship(
         back_populates="generation", cascade="all, delete-orphan"
     )
+    targets: Mapped[list[GenerationTarget]] = relationship(
+        back_populates="generation", cascade="all, delete-orphan"
+    )
 
 
 class GeneratedVersion(Base):
@@ -135,3 +138,25 @@ class GeneratedVersion(Base):
     storage_name: Mapped[str] = mapped_column(String(255), unique=True)
 
     generation: Mapped[GenerationJob] = relationship(back_populates="versions")
+
+
+class GenerationTarget(Base):
+    """Immutable audit detail for every confirmed element in a generation."""
+
+    __tablename__ = "generation_targets"
+    __table_args__ = (
+        UniqueConstraint("generation_id", "element_id", name="uq_generation_element"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    generation_id: Mapped[str] = mapped_column(
+        ForeignKey("generation_jobs.id", ondelete="CASCADE"), index=True
+    )
+    element_id: Mapped[str] = mapped_column(String(36), index=True)
+    document_id: Mapped[str] = mapped_column(String(36), index=True)
+    document_name: Mapped[str] = mapped_column(String(255))
+    paragraph_index: Mapped[int] = mapped_column(Integer)
+    before_text: Mapped[str] = mapped_column(Text)
+    after_text: Mapped[str] = mapped_column(Text)
+
+    generation: Mapped[GenerationJob] = relationship(back_populates="targets")

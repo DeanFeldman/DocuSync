@@ -1,10 +1,12 @@
 import type {
+  DocumentView,
   DocumentSetResponse,
   GenerationResponse,
+  MatchDiscovery,
   PreviewResponse,
 } from "./types";
 
-const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000/api").replace(
+const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8001/api").replace(
   /\/$/,
   "",
 );
@@ -56,6 +58,8 @@ export async function previewEdit(
   documentSetId: string,
   linkGroupId: string,
   replacementText: string,
+  sourceElementId?: string,
+  includedElementIds?: string[],
 ): Promise<PreviewResponse> {
   const response = await fetch(`${API_URL}/document-sets/${documentSetId}/preview`, {
     method: "POST",
@@ -63,6 +67,8 @@ export async function previewEdit(
     body: JSON.stringify({
       link_group_id: linkGroupId,
       replacement_text: replacementText,
+      source_element_id: sourceElementId,
+      included_element_ids: includedElementIds,
     }),
   });
   return parseResponse<PreviewResponse>(response);
@@ -72,6 +78,8 @@ export async function generateEdit(
   documentSetId: string,
   linkGroupId: string,
   replacementText: string,
+  sourceElementId?: string,
+  includedElementIds?: string[],
 ): Promise<GenerationResponse> {
   const response = await fetch(`${API_URL}/document-sets/${documentSetId}/generate`, {
     method: "POST",
@@ -79,12 +87,31 @@ export async function generateEdit(
     body: JSON.stringify({
       link_group_id: linkGroupId,
       replacement_text: replacementText,
+      source_element_id: sourceElementId,
+      included_element_ids: includedElementIds,
     }),
   });
   return parseResponse<GenerationResponse>(response);
 }
 
+export async function fetchDocumentView(versionId: string): Promise<DocumentView> {
+  const response = await fetch(`${API_URL}/documents/${versionId}/render`, {
+    method: "POST",
+  });
+  return parseResponse<DocumentView>(response);
+}
+
+export async function fetchElementMatches(elementId: string): Promise<MatchDiscovery> {
+  const response = await fetch(`${API_URL}/document-elements/${elementId}/matches`);
+  return parseResponse<MatchDiscovery>(response);
+}
+
 export function absoluteDownloadUrl(relativeUrl: string): string {
+  const apiOrigin = new URL(API_URL);
+  return new URL(relativeUrl, apiOrigin.origin).toString();
+}
+
+export function absoluteApiUrl(relativeUrl: string): string {
   const apiOrigin = new URL(API_URL);
   return new URL(relativeUrl, apiOrigin.origin).toString();
 }
