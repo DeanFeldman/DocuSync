@@ -39,7 +39,14 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          npm version $version --no-git-tag-version --allow-same-version
+
+          if (-not $version) {
+            throw "Could not determine the version from the Git tag."
+          }
+
+          npm version $version `
+            --no-git-tag-version `
+            --allow-same-version
 
       - name: Run tests
         run: npm test
@@ -47,29 +54,100 @@ jobs:
       - name: Build Windows installer
         run: npm run dist:win
 
-      - name: Create installer checksum
+      - name: Prepare release files
         shell: pwsh
         run: |
-          Get-FileHash release/v1/*.exe -Algorithm SHA256 |
+          $releaseDirectory = "release/v1"
+
+          $installer = Get-ChildItem `
+            "$releaseDirectory/DocSync-Setup-*.exe" `
+            -File |
+            Where-Object {
+              $_.Name -ne "DocSync-Setup-latest.exe" -and
+              $_.Name -notlike "*uninstaller*"
+            } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $installer) {
+            throw "The DocSync installer was not created."
+          }
+
+          $latestInstaller = Join-Path `
+            $releaseDirectory `
+            "DocSync-Setup-latest.exe"
+
+          Copy-Item `
+            $installer.FullName `
+            $latestInstaller `
+            -Force
+
+          Get-FileHash `
+            $installer.FullName, $latestInstaller `
+            -Algorithm SHA256 |
             ForEach-Object {
               "$($_.Hash)  $($_.Path | Split-Path -Leaf)"
             } |
-            Set-Content release/v1/SHA256SUMS.txt
+            Set-Content `
+              "$releaseDirectory/SHA256SUMS.txt" `
+              -Encoding utf8
+
+          Write-Host "Versioned installer: $($installer.Name)"
+          Write-Host "Latest installer: DocSync-Setup-latest.exe"
 
       - name: Publish GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assets = Get-ChildItem "release/v1" -File |
+          $tag = "${{ github.ref_name }}"
+          $releaseDirectory = "release/v1"
+
+          $versionedInstaller = Get-ChildItem `
+            "$releaseDirectory/DocSync-Setup-*.exe" `
+            -File |
             Where-Object {
-              $_.Extension -eq ".exe" -or
-              $_.Name -eq "SHA256SUMS.txt"
+              $_.Name -ne "DocSync-Setup-latest.exe" -and
+              $_.Name -notlike "*uninstaller*"
             } |
-            ForEach-Object {
-              $_.FullName
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $versionedInstaller) {
+            throw "The versioned installer could not be found."
+          }
+
+          $assets = @(
+            $versionedInstaller.FullName
+            (Resolve-Path "$releaseDirectory/DocSync-Setup-latest.exe").Path
+            (Resolve-Path "$releaseDirectory/SHA256SUMS.txt").Path
+          )
+
+          gh release view $tag *> $null
+
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists. Replacing its files."
+
+            gh release upload $tag $assets --clobber
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Uploading the updated release files failed."
             }
 
-          gh release create "${{ github.ref_name }}" $assets `
-            --title "DocSync ${{ github.ref_name }}" `
-            --generate-notes
+            gh release edit $tag `
+              --title "DocSync $tag" `
+              --latest
+          }
+          else {
+            Write-Host "Creating release $tag."
+
+            gh release create $tag $assets `
+              --title "DocSync $tag" `
+              --generate-notes `
+              --verify-tag `
+              --latest
+          }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Publishing the GitHub Release failed."
+          }

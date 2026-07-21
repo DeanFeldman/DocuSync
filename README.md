@@ -1,196 +1,302 @@
-# DocumentSync
+# DocSync
 
-DocumentSync v1 is an installable Windows application for applying one confirmed edit across related DOCX files while keeping the original uploads unchanged. The controlled DOCX workspace is the main Electron application. The earlier plain-text template proof remains in source as an architecture reference, but it is not part of the installed product.
+[![Desktop CI](https://github.com/DeanFeldman/DocuSync/actions/workflows/phase3-desktop.yml/badge.svg)](https://github.com/DeanFeldman/DocuSync/actions/workflows/phase3-desktop.yml)
+[![Release](https://github.com/DeanFeldman/DocuSync/actions/workflows/release.yml/badge.svg)](https://github.com/DeanFeldman/DocuSync/actions/workflows/release.yml)
 
-## Phase 3 desktop quick start
+DocSync is a Windows desktop application for ap plying one confirmed edit across related Microsoft Word documents while preserving the original uploads.
 
-Development requires Node.js 22 or newer and Python 3.11 or newer. The packaged Windows application includes both the Electron runtime and a frozen Python document service.
+The application lets users upload a set of related `.docx` files, inspect each document, select repeated content, choose exactly which matches should change, preview the effect, and generate updated document versions.
+
+## Download the Windows application
+The latest Windows installer is available from the GitHub **Releases** page.
+
+Each release contains:
+
+- `DocSync-Setup-<version>.exe` — installer for that specific version.
+- `DocSync-Setup-latest.exe` — the newest available installer.
+- `SHA256SUMS.txt` — checksums for verifying the downloaded files.
+
+For most users, download:
+
+```text
+DocSync-Setup-latest.exe
+``` 
+
+## Main features
+
+- Upload between 2 and 20 related `.docx` files as a document set.
+- Open and scroll through each uploaded document.
+- Use a Microsoft Word-generated layout preview when Word is installed.
+- Fall back to a structured selectable preview when Word rendering is unavailable.
+- Search visible document text.
+- Select supported paragraphs, headings, and list items.
+- Find exact repeated content across multiple documents.
+- Include or exclude each matching location before applying an edit.
+- Preview every affected document and paragraph.
+- Generate new versions without modifying the original uploads.
+- Continue editing the newly generated workspace versions.
+- Download one current document or the complete document set as a ZIP archive.
+- Persist document sets, elements, link groups, generated versions, and edit metadata locally.
+- Build an installable Windows application with Electron Builder and NSIS.
+- Automatically publish tagged versions through GitHub Actions.
+
+## Technology
+
+- **Desktop shell:** Electron
+- **Installer:** Electron Builder and NSIS
+- **Frontend:** React, TypeScript, and Vite
+- **Backend:** FastAPI and Python
+- **Document processing:** `python-docx`
+- **Database:** SQLAlchemy with SQLite
+- **Backend packaging:** PyInstaller
+- **Automation:** GitHub Actions
+
+The packaged Windows application includes the Electron runtime and the frozen Python backend. Installed users do not need Node.js, npm, Python, or developer tools.
+
+## Requirements for development
+
+- Windows 10 or Windows 11
+- Node.js 22 or newer
+- Python 3.11 or newer
+- npm
+- Microsoft Word desktop for the high-fidelity Word layout preview
+
+Microsoft Word is not required for the structured fallback preview.
+
+## Run locally
+
+Run the following commands from the repository root in Windows PowerShell:
 
 ```powershell
+cd "C:\path\to\DocuSync"
+
 npm install
 python -m pip install -r apps/api/requirements.txt
 npm test
 npm start
 ```
 
-`npm start` builds the React interface, opens DocSync in its own Electron window, and automatically starts the FastAPI document service on an ephemeral `127.0.0.1` port. Microsoft Word desktop is required for the high-fidelity Word-layout preview; the selectable structured preview remains available as a fallback.
+`npm start` builds the React frontend, starts the local FastAPI service, and opens DocSync in an Electron window.
 
-Build the assisted NSIS installer:
+### PowerShell execution-policy error
+
+If PowerShell blocks `npm.ps1`, use `npm.cmd`:
 
 ```powershell
-python -m pip install -r apps/api/requirements-build.txt
-npm run dist:win
+npm.cmd install
+npm.cmd test
+npm.cmd start
 ```
 
-Installer output is written to `release/v1/`. Installed users do not need Node.js, npm, Python, or developer tools. See `docs/phase-3.md` for status and acceptance evidence, `docs/phase-3-api.md` for the desktop API, and `docs/phase-3-testing.md` for the clean-install checklist.
+Alternatively, allow scripts only for the current PowerShell session:
 
-## Phase 2 DOCX workspace
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
 
-The installed desktop application contains the **Phase 2 controlled-edit vertical slice**. It supports:
+## Run the frontend and backend separately
 
-- Uploading two or more `.docx` files as a document set.
-- Opening each uploaded document with a Microsoft Word-generated layout preview.
-- Switching to a structured, keyboard-accessible text-selection view for controlled edits.
-- Keyboard selection of recognised paragraphs, headings, and list items by stable element ID.
-- Document switching, visible-text search, zoom, fit-width, and a live page indicator.
-- Validating file type, size, and basic DOCX structure.
-- Extracting non-empty paragraphs.
-- Finding exact repeated paragraphs across different documents.
-- Letting the user include or exclude each exact-match location before editing.
-- Previewing every affected file and paragraph.
-- Applying generated DOCX versions back to the active workspace so more edits can follow.
-- Downloading the current document individually or every current document as one ZIP archive.
-- Persisting document-set, element, link-group, generated-version, and confirmed-target audit metadata.
-- Running automated backend workflow tests in CI.
-
-## Desktop technology choice
-
-The application uses:
-
-- **Desktop shell and installer:** Electron, Electron Builder, and NSIS.
-- **Frontend:** React, TypeScript, and Vite, served by the local backend inside Electron.
-- **Backend:** FastAPI and Python, bundled as a Windows executable with PyInstaller.
-- **Document processing:** `python-docx`.
-- **Database:** SQLAlchemy with SQLite for zero-setup local development and PostgreSQL compatibility through `DOCUMENTSYNC_DATABASE_URL`.
-
-The Python backend is intentional because DOCX parsing and generation are the core product capability. The decisions are documented in `docs/adr/0001-python-document-backend.md` and `docs/adr/0002-electron-desktop-shell.md`.
-
-## Prerequisites
-
-- Python 3.11 or newer.
-- Node.js 20 or newer.
-- npm.
-- Microsoft Word desktop on Windows for the high-fidelity Word layout preview.
-
-## Run locally
-
-### 1. Start the backend
-
-#### Windows PowerShell
+### Backend
 
 ```powershell
 cd apps/api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8001
 ```
 
-#### macOS/Linux
+The FastAPI documentation is available at:
 
-```bash
-cd apps/api
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --port 8001
+```text
+http://localhost:8001/docs
 ```
 
-The API documentation is available at `http://localhost:8001/docs`.
+### Frontend
 
-### 2. Start the frontend
+Open another terminal:
 
-Open a second terminal:
-
-```bash
+```powershell
 cd apps/web
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Then open:
 
-The backend permits the local Vite origins on ports `5173` and `5174`, so the app also works if Vite selects `5174` because `5173` is already in use. Phase 2 uses backend port `8001` to avoid collisions with earlier prototypes on port `8000`.
-
-### 3. Create sample DOCX files
-
-From `apps/api` with the virtual environment active:
-
-```bash
-python scripts/create_sample_docs.py
+```text
+http://localhost:5173
 ```
-
-This creates three sample agreements in `apps/api/sample-documents/` with one shared reporting paragraph and different building details.
 
 ## Run tests
 
-### Backend
+Run all tests from the repository root:
 
-```bash
+```powershell
+npm test
+```
+
+Run the backend tests directly:
+
+```powershell
 cd apps/api
-pip install -r requirements.txt
-pytest
+python -m pip install -r requirements.txt
+python -m pytest
 ```
 
-### Frontend
+Build-check the frontend:
 
-```bash
-cd apps/web
+```powershell
+npm run build:web
+```
+
+## Build the Windows installer
+
+Install the build requirements:
+
+```powershell
+python -m pip install -r apps/api/requirements-build.txt
 npm install
-npm run build
 ```
+
+Build the installer:
+
+```powershell
+npm run dist:win
+```
+
+The installer is written to:
+
+```text
+release/v1/DocSync-Setup-<version>.exe
+```
+
+A successfully packaged application may also appear under:
+
+```text
+release/v1/win-unpacked/
+```
+
+Do not commit the `release/` directory to Git. Installer files belong on the GitHub Releases page.
+
+## Automatic GitHub releases
+
+The release workflow runs whenever a tag beginning with `v` is pushed.
+
+Example:
+
+```powershell
+git switch main
+git pull origin main
+
+git tag -a v1.1.0 -m "DocSync v1.1.0"
+git push origin v1.1.0
+```
+
+GitHub Actions will then:
+
+1. Check out the tagged source code.
+2. Install Node and Python dependencies.
+3. Set the package version from the Git tag.
+4. Run the automated tests.
+5. Build the Windows installer.
+6. Generate a SHA-256 checksum.
+7. Create a permanent GitHub Release.
+8. Upload the installer and checksum file.
+
+The workflow file is located at:
+
+```text
+.github/workflows/release.yml
+```
+
+Use semantic version tags:
+
+```text
+v1.0.0  Initial stable release
+v1.1.0  New backwards-compatible features
+v1.1.1  Bug fixes
+v2.0.0  Breaking changes
+```
+
+Do not reuse or move a published version tag. Create a new version tag for every release.
 
 ## Project structure
 
 ```text
-DocumentSync-starter/
+DocuSync/
+├── .github/
+│   └── workflows/
+│       ├── phase3-desktop.yml     Test and installer build workflow
+│       └── release.yml            Tag-triggered GitHub Release workflow
 ├── apps/
-│   ├── desktop/             Electron lifecycle, security, downloads, and packaging entry
-│   ├── api/                 Main FastAPI backend, DOCX engine, and PyInstaller entry
-│   ├── web/                 Main React/Vite controlled-edit interface
-│   ├── desktop-ui/          Retained plain-text architecture prototype, not shipped
-│   └── template-api/        Retained template-engine prototype, not shipped
+│   ├── api/                       FastAPI backend and DOCX engine
+│   ├── desktop/                   Electron application lifecycle
+│   ├── web/                       React and TypeScript frontend
+│   ├── desktop-ui/                Retained architecture prototype
+│   └── template-api/              Retained template-engine prototype
+├── build/
+│   ├── icon.ico                   Windows installer and application icon
+│   └── icon.png                   Development-window icon
 ├── docs/
-│   ├── adr/                 Architecture decision records
-│   ├── api.md               HTTP interface summary
-│   └── milestone-1.md       Build plan and acceptance evidence
-├── .github/workflows/phase3-desktop.yml
+│   └── adr/                       Architecture decision records
+├── package.json
+├── package-lock.json
 └── README.md
 ```
 
-## Core HTTP endpoints
+## Core API endpoints
 
-- `GET /api/health`
-- `POST /api/document-sets`
-- `GET /api/document-sets/{document_set_id}`
-- `POST /api/documents/{document_id}/render`
-- `GET /api/documents/{document_id}/download`
-- `POST /api/document-sets/{document_set_id}/preview`
-- `POST /api/document-sets/{document_set_id}/generate`
-- `GET /api/generations/{generation_id}/download`
+```text
+GET  /api/health
+POST /api/document-sets
+GET  /api/document-sets/{document_set_id}
+POST /api/documents/{document_id}/render
+GET  /api/document-versions/{version_id}/pages
+GET  /api/document-versions/{version_id}/rendered-file
+GET  /api/documents/{document_id}/download
+GET  /api/document-elements/{element_id}/matches
+POST /api/document-sets/{document_set_id}/preview
+POST /api/document-sets/{document_set_id}/generate
+GET  /api/document-sets/{document_set_id}/history
+GET  /api/generations/{generation_id}/download
+```
 
-See `docs/api.md` for request and response details.
+## Current limitations
 
-## Important current limitations
-
-- The Word layout tab is exported by the installed Microsoft Word engine and includes Word pagination, tables, images, headers, and footers. It is read-only.
-- The packaged desktop app includes Python and the FastAPI service, but it does not include Microsoft Word. Word must be installed for high-fidelity layout rendering.
-- Paragraphs, headings, and list items in the main document body are selectable in the separate Select text tab; tables, headers, footers, comments, tracked changes, and text boxes are not selectable yet.
-- This local Windows release uses the installed Microsoft Word application for layout rendering. Any future shared or server edition should use an isolated, licensed document-rendering service rather than desktop Office automation.
+- The Microsoft Word layout preview is read-only.
+- Microsoft Word must be installed for high-fidelity layout rendering.
+- Direct text selection currently happens in the structured preview rather than over the Word layout.
+- Selectable content is currently focused on paragraphs, headings, and list items.
+- Tables, headers, footers, comments, tracked changes, text boxes, and other advanced Word elements are not fully editable yet.
 - Exact matching currently normalises whitespace and letter case.
-- Replacement preserves the paragraph style and formatting of the first text run, but mixed formatting inside the replaced paragraph is intentionally not guaranteed yet.
-- Authentication and organisation-level authorisation are not included in this first local vertical slice. They must be added using an established identity provider before deployment.
-- Files are stored on the local backend filesystem in development. Production should use private object storage.
+- Replacements preserve the paragraph style and first text-run formatting, but complex mixed formatting is not guaranteed.
+- The current release is designed as a local desktop application and does not include organisation authentication or cloud storage.
+- The Windows installer is not yet commercially code-signed and may trigger a Microsoft SmartScreen warning.
 
 ## Recommended next build order
 
-1. Add established authentication and backend authorisation.
-2. Add PostgreSQL migrations with Alembic.
-3. Add an element-to-render bounding-box map so selection can happen directly over the Word layout.
-4. Add simple table-cell extraction and editing.
-5. Add similarity suggestions that always require user confirmation.
-6. Add cloud-storage import/export.
-7. Add reviewer approval and immutable audit events.
-8. Add a backlog of Document Sets to come back to 
+1. Add a saved document-set library.
+2. Add a read-only history screen.
+3. Add undo and version restoration.
+4. Add a richer before-and-after diff.
+5. Allow documents to be added to or removed from existing sets.
+6. Add global search across a document set.
+7. Add table-cell extraction and editing.
+8. Add fuzzy-match suggestions that require confirmation.
+9. Add direct element selection over the Word layout.
+10. Add authentication, PostgreSQL migrations, and cloud storage when moving beyond local use.
 
-extras
-- Saved document-set library
-- History screen and undo
-- Real before/after diff
-- Add/remove documents from existing sets
-- Tag-triggered GitHub Release workflow
-- Table-cell support
-- Direct selection from the Word layout
-- Fuzzy match suggestions
-- Global workspace search
-- Authentication and cloud storage only when moving beyond local use
+## Safety model
+
+DocSync is designed around explicit confirmation:
+
+- Original uploads are preserved.
+- Matches are shown before changes are generated.
+- Users choose which matching locations are included.
+- Generated documents are stored as new versions.
+- Downloads are produced only after the user confirms the edit.
+
+## Licence
+
+The project is currently marked as `UNLICENSED`. No permission is granted to copy, modify, or distribute the source code unless a licence is added later.
