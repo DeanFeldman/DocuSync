@@ -1,4 +1,4 @@
-
+﻿
 # Python
 __pycache__/
 *.py[cod]
@@ -29,9 +29,11 @@ phase2-api.*.log
 .browser-artifacts/
 .test-tmp-root/
 pytest-cache-files-*/
+.icon-venv/
 
 # IDE / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+

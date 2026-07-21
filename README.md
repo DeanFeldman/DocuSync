@@ -184,7 +184,6 @@ See `docs/api.md` for request and response details.
 8. Add a backlog of Document Sets to come back to 
 
 extras
-- logo
 - Saved document-set library
 - History screen and undo
 - Real before/after diff
