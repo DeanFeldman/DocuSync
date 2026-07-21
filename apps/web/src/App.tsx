@@ -672,8 +672,34 @@ function App() {
               <div><button type="button" className="quiet-button" onClick={() => setPreview(null)} disabled={busyAction === "generate"}>Back to edit</button><button type="button" className="primary-button" onClick={() => void handleGenerate()} disabled={busyAction === "generate"}>{busyAction === "generate" ? "Applying changes…" : "Apply changes and continue"}</button></div>
             </footer>
           </section>
-        </div>
-      )}
+        )}
+
+        {generation && (
+          <section className="success-section" aria-live="polite">
+            <div className="success-mark" aria-hidden="true">✓</div>
+            <div>
+              <p className="eyebrow">Generation complete</p>
+              <h2>Your updated documents are ready.</h2>
+              <p>
+                {generation.files.length} new DOCX file{generation.files.length === 1 ? "" : "s"} were
+                created. The originals were not overwritten.
+              </p>
+              <ul>
+                {generation.files.map((file) => (
+                  <li key={`${file.source_document_id}-${file.name}`}>{file.name}</li>
+                ))}
+              </ul>
+            </div>
+            <a className="download-button" href={absoluteDownloadUrl(generation.download_url)}>
+              Download ZIP
+            </a>
+          </section>
+        )}
+      </main>
+
+      <footer>
+        <strong>DocumentSync</strong>
+      </footer>
     </div>
   );
 }
