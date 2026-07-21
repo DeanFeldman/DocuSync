@@ -351,11 +351,6 @@ function App() {
                 View uploaded Word documents in the browser, choose an exact shared element,
                 review every target, and create new versions without touching the originals.
               </p>
-              <div className="trust-row" aria-label="DocumentSync safeguards">
-                <span>Keyboard-selectable elements</span>
-                <span>Explicit target confirmation</span>
-                <span>Immutable originals</span>
-              </div>
             </div>
             <div className="workflow-card" aria-label="Document editing workflow">
               <div><span>1</span><p><strong>Open</strong><small>Scroll through each document</small></p></div>
