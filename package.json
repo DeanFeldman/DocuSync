@@ -22,7 +22,7 @@
     "prepack:win": "npm run build:desktop",
     "pack:win": "electron-builder --win dir",
     "predist:win": "npm run build:desktop",
-    "dist:win": "electron-builder --win nsis"
+    "dist:win": "electron-builder --win nsis --publish never"
   },
   "devDependencies": {
     "electron": "43.1.1",
