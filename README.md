@@ -153,6 +153,4 @@ See `docs/api.md` for request and response details.
 6. Add cloud-storage import/export.
 7. Add reviewer approval and immutable audit events.
 
-## Student
 
-Dean Feldman — 2803899
