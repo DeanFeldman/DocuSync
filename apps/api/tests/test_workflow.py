@@ -52,6 +52,38 @@ def load_test_app(tmp_path: Path):
     return main.app
 
 
+def test_desktop_session_cookie_protects_document_endpoints(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DOCUMENTSYNC_SESSION_TOKEN", "desktop-test-token")
+    app = load_test_app(tmp_path)
+
+    with TestClient(app) as client:
+        assert client.get("/api/health").status_code == 200
+        denied = client.post("/api/document-sets")
+        assert denied.status_code == 401
+        assert denied.json()["detail"] == "The desktop session is missing or invalid."
+
+        client.cookies.set("docsync_session", "desktop-test-token")
+        accepted = client.post("/api/document-sets")
+        assert accepted.status_code == 422
+
+
+def test_built_desktop_frontend_is_served_by_the_api(tmp_path: Path, monkeypatch) -> None:
+    web_dist = tmp_path / "web"
+    (web_dist / "assets").mkdir(parents=True)
+    (web_dist / "index.html").write_text("<h1>DocSync desktop</h1>", encoding="utf-8")
+    (web_dist / "assets" / "app.js").write_text("console.log('ready')", encoding="utf-8")
+    monkeypatch.setenv("DOCUMENTSYNC_WEB_DIST", str(web_dist))
+    monkeypatch.delenv("DOCUMENTSYNC_SESSION_TOKEN", raising=False)
+    app = load_test_app(tmp_path)
+
+    with TestClient(app) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert "DocSync desktop" in page.text
+        assert page.headers["x-content-type-options"] == "nosniff"
+        assert client.get("/assets/app.js").status_code == 200
+
+
 def test_exact_match_preview_generation_and_original_immutability(tmp_path: Path) -> None:
     shared = "The building manager must submit the report every month."
     replacement = (

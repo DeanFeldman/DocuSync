@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import secrets
 
-from fastapi import Depends, FastAPI, File, Form, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -37,8 +39,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="DocumentSync API",
-    version="0.2.0",
-    description="Phase 2 structured DOCX viewing and controlled-edit vertical slice.",
+    version="1.0.0",
+    description="DocSync structured DOCX viewing and controlled editing service.",
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -48,6 +50,33 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.middleware("http")
+async def secure_local_application(request: Request, call_next):
+    if (
+        settings.session_token
+        and request.url.path.startswith("/api/")
+        and request.url.path != "/api/health"
+    ):
+        supplied = request.cookies.get("docsync_session", "")
+        if not secrets.compare_digest(settings.session_token, supplied):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "The desktop session is missing or invalid."},
+            )
+
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "connect-src 'self'; frame-src 'self'; object-src 'self'; base-uri 'none'; "
+        "frame-ancestors 'self'; form-action 'self'"
+    )
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return response
 
 
 @app.get("/api/health")
@@ -196,3 +225,13 @@ def download_generation(
         media_type="application/zip",
         filename=f"DocumentSync-{generation_id}.zip",
     )
+
+
+if settings.web_dist_dir.is_dir():
+    assets_dir = settings.web_dist_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="desktop-assets")
+
+    @app.get("/", include_in_schema=False)
+    def read_desktop_application() -> FileResponse:
+        return FileResponse(settings.web_dist_dir / "index.html", headers={"Cache-Control": "no-store"})

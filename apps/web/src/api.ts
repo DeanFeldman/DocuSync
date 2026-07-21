@@ -6,7 +6,7 @@ import type {
   PreviewResponse,
 } from "./types";
 
-const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8001/api").replace(
+const API_URL = (import.meta.env.VITE_API_URL ?? "/api").replace(
   /\/$/,
   "",
 );
@@ -98,6 +98,10 @@ export async function fetchDocumentView(versionId: string): Promise<DocumentView
   const response = await fetch(`${API_URL}/documents/${versionId}/render`, {
     method: "POST",
   });
+  if ([422, 503, 504].includes(response.status)) {
+    const fallback = await fetch(`${API_URL}/document-versions/${versionId}/pages`);
+    return parseResponse<DocumentView>(fallback);
+  }
   return parseResponse<DocumentView>(response);
 }
 
@@ -107,11 +111,11 @@ export async function fetchElementMatches(elementId: string): Promise<MatchDisco
 }
 
 export function absoluteDownloadUrl(relativeUrl: string): string {
-  const apiOrigin = new URL(API_URL);
+  const apiOrigin = new URL(API_URL, window.location.origin);
   return new URL(relativeUrl, apiOrigin.origin).toString();
 }
 
 export function absoluteApiUrl(relativeUrl: string): string {
-  const apiOrigin = new URL(API_URL);
+  const apiOrigin = new URL(API_URL, window.location.origin);
   return new URL(relativeUrl, apiOrigin.origin).toString();
 }

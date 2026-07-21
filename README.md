@@ -1,8 +1,32 @@
 # DocumentSync
 
-DocumentSync is a web application for applying one confirmed edit across several related existing DOCX files while preserving each file's unique content and keeping the original uploads unchanged.
+DocumentSync v1 is an installable Windows application for applying one confirmed edit across related DOCX files while keeping the original uploads unchanged. The controlled DOCX workspace is the main Electron application. The earlier plain-text template proof remains in source as an architecture reference, but it is not part of the installed product.
 
-This repository now contains the **Phase 2 controlled-edit vertical slice**. It supports:
+## Phase 3 desktop quick start
+
+Development requires Node.js 22 or newer and Python 3.11 or newer. The packaged Windows application includes both the Electron runtime and a frozen Python document service.
+
+```powershell
+npm install
+python -m pip install -r apps/api/requirements.txt
+npm test
+npm start
+```
+
+`npm start` builds the React interface, opens DocSync in its own Electron window, and automatically starts the FastAPI document service on an ephemeral `127.0.0.1` port. Microsoft Word desktop is required for the high-fidelity Word-layout preview; the selectable structured preview remains available as a fallback.
+
+Build the assisted NSIS installer:
+
+```powershell
+python -m pip install -r apps/api/requirements-build.txt
+npm run dist:win
+```
+
+Installer output is written to `release/v1/`. Installed users do not need Node.js, npm, Python, or developer tools. See `docs/phase-3.md` for status and acceptance evidence, `docs/phase-3-api.md` for the desktop API, and `docs/phase-3-testing.md` for the clean-install checklist.
+
+## Phase 2 DOCX workspace
+
+The installed desktop application contains the **Phase 2 controlled-edit vertical slice**. It supports:
 
 - Uploading two or more `.docx` files as a document set.
 - Opening each uploaded document with a Microsoft Word-generated layout preview.
@@ -19,16 +43,17 @@ This repository now contains the **Phase 2 controlled-edit vertical slice**. It 
 - Persisting document-set, element, link-group, generated-version, and confirmed-target audit metadata.
 - Running automated backend workflow tests in CI.
 
-## Technology choice
+## Desktop technology choice
 
-The proposal suggested React/TypeScript for the frontend and Node.js or Fastify for the backend. This starter uses:
+The application uses:
 
-- **Frontend:** React, TypeScript, and Vite.
-- **Backend:** FastAPI and Python.
+- **Desktop shell and installer:** Electron, Electron Builder, and NSIS.
+- **Frontend:** React, TypeScript, and Vite, served by the local backend inside Electron.
+- **Backend:** FastAPI and Python, bundled as a Windows executable with PyInstaller.
 - **Document processing:** `python-docx`.
 - **Database:** SQLAlchemy with SQLite for zero-setup local development and PostgreSQL compatibility through `DOCUMENTSYNC_DATABASE_URL`.
 
-The Python backend is an intentional architecture decision because reliable DOCX parsing and generation are the highest technical risk in the project. The decision is documented in `docs/adr/0001-python-document-backend.md` and can be revisited after the first prototype review.
+The Python backend is intentional because DOCX parsing and generation are the core product capability. The decisions are documented in `docs/adr/0001-python-document-backend.md` and `docs/adr/0002-electron-desktop-shell.md`.
 
 ## Prerequisites
 
@@ -110,13 +135,16 @@ npm run build
 ```text
 DocumentSync-starter/
 ├── apps/
-│   ├── api/                 FastAPI backend and DOCX engine
-│   └── web/                 React/Vite frontend
+│   ├── desktop/             Electron lifecycle, security, downloads, and packaging entry
+│   ├── api/                 Main FastAPI backend, DOCX engine, and PyInstaller entry
+│   ├── web/                 Main React/Vite controlled-edit interface
+│   ├── desktop-ui/          Retained plain-text architecture prototype, not shipped
+│   └── template-api/        Retained template-engine prototype, not shipped
 ├── docs/
 │   ├── adr/                 Architecture decision records
 │   ├── api.md               HTTP interface summary
 │   └── milestone-1.md       Build plan and acceptance evidence
-├── .github/workflows/ci.yml
+├── .github/workflows/phase3-desktop.yml
 └── README.md
 ```
 
@@ -136,8 +164,9 @@ See `docs/api.md` for request and response details.
 ## Important current limitations
 
 - The Word layout tab is exported by the installed Microsoft Word engine and includes Word pagination, tables, images, headers, and footers. It is read-only.
+- The packaged desktop app includes Python and the FastAPI service, but it does not include Microsoft Word. Word must be installed for high-fidelity layout rendering.
 - Paragraphs, headings, and list items in the main document body are selectable in the separate Select text tab; tables, headers, footers, comments, tracked changes, and text boxes are not selectable yet.
-- Microsoft Word automation is suitable for this local Windows prototype. A production service should use an isolated, licensed document-rendering service rather than desktop Office automation.
+- This local Windows release uses the installed Microsoft Word application for layout rendering. Any future shared or server edition should use an isolated, licensed document-rendering service rather than desktop Office automation.
 - Exact matching currently normalises whitespace and letter case.
 - Replacement preserves the paragraph style and formatting of the first text run, but mixed formatting inside the replaced paragraph is intentionally not guaranteed yet.
 - Authentication and organisation-level authorisation are not included in this first local vertical slice. They must be added using an established identity provider before deployment.
