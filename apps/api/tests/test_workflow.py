@@ -423,3 +423,98 @@ def test_exact_text_does_not_link_incompatible_element_types(tmp_path: Path) -> 
         assert all(
             group["representative_text"] != shared for group in uploaded.json()["link_groups"]
         )
+
+def test_set_management_and_global_search(tmp_path: Path) -> None:
+    shared = "The manager must submit a monthly compliance report."
+    app = load_test_app(tmp_path)
+
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/api/document-sets",
+            data={"name": "Managed agreements"},
+            files=[
+                (
+                    "files",
+                    (
+                        "Alpha.docx",
+                        io.BytesIO(make_docx("Alpha", "1 Alpha Road", shared)),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                ),
+                (
+                    "files",
+                    (
+                        "Beta.docx",
+                        io.BytesIO(make_docx("Beta", "2 Beta Road", shared)),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                ),
+            ],
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        workspace = uploaded.json()
+
+        added = client.post(
+            f"/api/document-sets/{workspace['id']}/documents",
+            files=[
+                (
+                    "files",
+                    (
+                        "Gamma.docx",
+                        io.BytesIO(
+                            make_docx(
+                                "Gamma",
+                                "3 Gamma Road",
+                                "Gamma contains the searchable emergency procedure.",
+                            )
+                        ),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                )
+            ],
+        )
+        assert added.status_code == 201, added.text
+        managed = added.json()
+        assert len(managed["documents"]) == 3
+        gamma = next(
+            document for document in managed["documents"]
+            if document["name"] == "Gamma.docx"
+        )
+
+        search = client.get(
+            f"/api/document-sets/{workspace['id']}/search",
+            params={"q": "searchable emergency"},
+        )
+        assert search.status_code == 200, search.text
+        assert search.json()["result_count"] == 1
+        assert search.json()["results"][0]["document_id"] == gamma["id"]
+
+        removed = client.delete(
+            f"/api/document-sets/{workspace['id']}/documents/{gamma['id']}"
+        )
+        assert removed.status_code == 200, removed.text
+        assert len(removed.json()["documents"]) == 2
+
+        blocked = client.delete(
+            f"/api/document-sets/{workspace['id']}/documents/"
+            f"{removed.json()['documents'][0]['id']}"
+        )
+        assert blocked.status_code == 422
+        assert "at least two documents" in blocked.json()["detail"]
+
+        no_results = client.get(
+            f"/api/document-sets/{workspace['id']}/search",
+            params={"q": "searchable emergency"},
+        )
+        assert no_results.status_code == 200
+        assert no_results.json()["results"] == []
+
+        deleted = client.delete(f"/api/document-sets/{workspace['id']}")
+        assert deleted.status_code == 200
+        assert deleted.json() == {
+            "deleted_id": workspace["id"],
+            "deleted": True,
+        }
+        assert client.get(f"/api/document-sets/{workspace['id']}").status_code == 404
+        assert client.get("/api/document-sets").json() == {"document_sets": []}
+        assert not (tmp_path / "data" / "originals" / workspace["id"]).exists()

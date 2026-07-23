@@ -10,12 +10,16 @@ import type { CSSProperties } from "react";
 import {
   absoluteApiUrl,
   absoluteDownloadUrl,
+  addDocumentsToSet,
+  deleteDocumentSet,
   fetchDocumentSet,
   fetchDocumentSets,
   fetchDocumentView,
   fetchElementMatches,
   generateEdit,
   previewEdit,
+  removeDocumentFromSet,
+  searchDocumentSet,
   uploadDocumentSet,
 } from "./api";
 import type {
@@ -24,6 +28,7 @@ import type {
   DocumentSummary,
   DocumentView,
   GenerationResponse,
+  GlobalSearchResult,
   MatchDiscovery,
   PreviewResponse,
   ViewerElement,
@@ -38,6 +43,9 @@ type BusyAction =
   | "matches"
   | "preview"
   | "generate"
+  | "add-documents"
+  | "remove-document"
+  | "delete-set"
   | null;
 
 function readableBytes(bytes: number): string {
@@ -67,9 +75,14 @@ const [setNameTouched, setSetNameTouched] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [documentSet, setDocumentSet] = useState<DocumentSetResponse | null>(null);
   const [savedSets, setSavedSets] = useState<DocumentSetLibraryItem[]>([]);
+  const [savedSetQuery, setSavedSetQuery] = useState("");
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [libraryError, setLibraryError] = useState("");
   const [openingSetId, setOpeningSetId] = useState("");
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([]);
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState("");
   const [viewer, setViewer] = useState<DocumentView | null>(null);
   const [selectedElementId, setSelectedElementId] = useState("");
@@ -86,6 +99,16 @@ const [setNameTouched, setSetNameTouched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [viewMode, setViewMode] = useState<"visual" | "select">("visual");
   const viewerScrollRef = useRef<HTMLDivElement>(null);
+  const addDocumentsInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredSavedSets = useMemo(() => {
+    const query = savedSetQuery.trim().toLocaleLowerCase();
+    if (!query) return savedSets;
+
+    return savedSets.filter((item) =>
+      item.name.toLocaleLowerCase().includes(query),
+    );
+  }, [savedSetQuery, savedSets]);
 
   const activeDocument = useMemo(
     () => documentSet?.documents.find((document) => document.id === activeDocumentId) ?? null,
@@ -138,6 +161,42 @@ const [setNameTouched, setSetNameTouched] = useState(false);
       cancelled = true;
     };
   }, []);
+
+
+  useEffect(() => {
+    const query = globalSearchQuery.trim();
+    if (!documentSet || query.length < 2) {
+      setGlobalSearchResults([]);
+      setGlobalSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      setGlobalSearchLoading(true);
+      try {
+        const response = await searchDocumentSet(documentSet.id, query);
+        if (!cancelled) {
+          setGlobalSearchResults(response.results);
+          setGlobalSearchOpen(true);
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          setGlobalSearchResults([]);
+          setError(
+            caught instanceof Error ? caught.message : "The document-set search failed.",
+          );
+        }
+      } finally {
+        if (!cancelled) setGlobalSearchLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [documentSet?.id, globalSearchQuery]);
 
   useEffect(() => {
     setSearchCursor(-1);
@@ -254,6 +313,9 @@ const [setNameTouched, setSetNameTouched] = useState(false);
     setViewMode(rendered?.pdf_url ? "visual" : "select");
     setCurrentPage(1);
     setSearchQuery("");
+    setGlobalSearchQuery("");
+    setGlobalSearchResults([]);
+    setGlobalSearchOpen(false);
     setGeneration(null);
     clearSelection();
   }
@@ -307,7 +369,104 @@ async function handleUpload(event: FormEvent) {
     }
   }
 
-  async function openDocument(document: DocumentSummary) {
+
+  async function handleDeleteDocumentSet(item: DocumentSetLibraryItem) {
+    const confirmed = window.confirm(
+      `Delete "${item.name}" permanently?\n\nThis removes the saved set and its local files. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setError("");
+    setBusyAction("delete-set");
+    try {
+      await deleteDocumentSet(item.id);
+      setSavedSets((current) => current.filter((saved) => saved.id !== item.id));
+      if (documentSet?.id === item.id) {
+        window.history.replaceState({ view: "home" }, "");
+        resetWorkspace(false);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The document set could not be deleted.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleAddDocuments(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (!documentSet || selectedFiles.length === 0) return;
+
+    setError("");
+    setBusyAction("add-documents");
+    try {
+      const updated = await addDocumentsToSet(documentSet.id, selectedFiles);
+      setDocumentSet(updated);
+      setSavedSets((current) =>
+        current.map((item) =>
+          item.id === updated.id
+            ? { ...item, document_count: updated.documents.length }
+            : item,
+        ),
+      );
+      setGeneration(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The documents could not be added.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleRemoveDocument(document: DocumentSummary) {
+    if (!documentSet) return;
+    const confirmed = window.confirm(
+      `Remove "${document.name}" from this set?\n\nThe set must retain at least two documents.`,
+    );
+    if (!confirmed) return;
+
+    setError("");
+    setBusyAction("remove-document");
+    try {
+      const updated = await removeDocumentFromSet(documentSet.id, document.id);
+      setDocumentSet(updated);
+      setSavedSets((current) =>
+        current.map((item) =>
+          item.id === updated.id
+            ? { ...item, document_count: updated.documents.length }
+            : item,
+        ),
+      );
+      setGeneration(null);
+      clearSelection();
+
+      if (activeDocumentId === document.id) {
+        const nextDocument = updated.documents[0] ?? null;
+        setActiveDocumentId(nextDocument?.id ?? "");
+        setViewer(
+          nextDocument ? await fetchDocumentView(nextDocument.version_id) : null,
+        );
+        setViewMode("select");
+        setCurrentPage(1);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The document could not be removed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function openGlobalSearchResult(result: GlobalSearchResult) {
+    if (!documentSet) return;
+    const targetDocument = documentSet.documents.find(
+      (document) => document.id === result.document_id,
+    );
+    if (!targetDocument) return;
+
+    setGlobalSearchOpen(false);
+    await openDocument(targetDocument, result.element_id);
+  }
+
+  async function openDocument(document: DocumentSummary, targetElementId = "") {
     const hasDraft = Boolean(
       selectedElement && replacement.trim() !== selectedElement.text.trim() && !preview,
     );
@@ -328,7 +487,22 @@ async function handleUpload(event: FormEvent) {
     try {
       const rendered = await fetchDocumentView(document.version_id);
       setViewer(rendered);
-      setViewMode(rendered.pdf_url ? "visual" : "select");
+      setViewMode(targetElementId ? "select" : rendered.pdf_url ? "visual" : "select");
+
+      if (targetElementId) {
+        const targetElement =
+          rendered.pages
+            .flatMap((page) => page.elements)
+            .find((element) => element.id === targetElementId) ?? null;
+        if (targetElement) {
+          await selectElement(targetElement);
+          window.setTimeout(() => {
+            window.document
+              .getElementById(`element-${targetElementId}`)
+              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }, 50);
+        }
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The document preview failed.");
     } finally {
@@ -595,8 +769,29 @@ const canUpload = files.length >= 2 && !busyAction;
                 <div>
                   <p className="eyebrow">Continue working</p>
                   <h2 id="saved-library-title">Saved workspaces</h2>
+                  <p className="saved-library-description">
+                    Reopen a document set stored on this computer without uploading it again.
+                  </p>
                 </div>
-                <p>Reopen a document set stored on this computer without uploading it again.</p>
+
+                <label className="saved-set-search">
+                  <span className="sr-only">Search saved workspaces</span>
+                  <input
+                    type="search"
+                    value={savedSetQuery}
+                    onChange={(event) => setSavedSetQuery(event.target.value)}
+                    placeholder="Search saved workspaces"
+                  />
+                  {savedSetQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSavedSetQuery("")}
+                      aria-label="Clear saved workspace search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </label>
               </div>
 
               {libraryLoading ? (
@@ -611,32 +806,47 @@ const canUpload = files.length >= 2 && !busyAction;
                   <strong>No saved workspaces yet.</strong>
                   <span>Your first uploaded document set will appear here automatically.</span>
                 </div>
+              ) : filteredSavedSets.length === 0 ? (
+                <div className="saved-library-state">
+                  <strong>No matching workspaces.</strong>
+                  <span>Try a different workspace name.</span>
+                </div>
               ) : (
                 <div className="saved-workspace-grid">
-                  {savedSets.map((item) => (
-                    <button
-                      type="button"
-                      className="saved-workspace-card"
-                      key={item.id}
-                      onClick={() => void openSavedWorkspace(item)}
-                      disabled={Boolean(busyAction)}
-                    >
-                      <span className="saved-workspace-icon" aria-hidden="true">W</span>
-                      <span className="saved-workspace-copy">
-                        <strong>{item.name}</strong>
-                        <small>Saved {readableDate(item.created_at)}</small>
-                        <span className="saved-workspace-stats">
-                          {item.document_count} document{item.document_count === 1 ? "" : "s"}
-                          <i aria-hidden="true">·</i>
-                          {item.edit_count} edit{item.edit_count === 1 ? "" : "s"}
+                  {filteredSavedSets.map((item) => (
+                    <article className="saved-workspace-card" key={item.id}>
+                      <button
+                        type="button"
+                        className="saved-workspace-main"
+                        onClick={() => void openSavedWorkspace(item)}
+                        disabled={Boolean(busyAction)}
+                      >
+                        <span className="saved-workspace-icon" aria-hidden="true">W</span>
+                        <span className="saved-workspace-copy">
+                          <strong>{item.name}</strong>
+                          <small>Saved {readableDate(item.created_at)}</small>
+                          <span className="saved-workspace-stats">
+                            {item.document_count} document{item.document_count === 1 ? "" : "s"}
+                            <i aria-hidden="true">·</i>
+                            {item.edit_count} edit{item.edit_count === 1 ? "" : "s"}
+                          </span>
                         </span>
-                      </span>
-                      <span className="saved-workspace-open">
-                        {busyAction === "open-set" && openingSetId === item.id
-                          ? "Opening…"
-                          : "Open workspace"}
-                      </span>
-                    </button>
+                        <span className="saved-workspace-open">
+                          {busyAction === "open-set" && openingSetId === item.id
+                            ? "Opening…"
+                            : "Open workspace"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="saved-workspace-delete"
+                        onClick={() => void handleDeleteDocumentSet(item)}
+                        disabled={Boolean(busyAction)}
+                        aria-label={`Delete ${item.name}`}
+                      >
+                        Delete
+                      </button>
+                    </article>
                   ))}
                 </div>
               )}
@@ -650,9 +860,69 @@ const canUpload = files.length >= 2 && !busyAction;
               <p className="eyebrow">Document set</p>
               <h1 id="workspace-title">{documentSet.name}</h1>
             </div>
-            <div className="set-summary">
-              <strong>{documentSet.documents.length}</strong><span>documents</span>
-              <strong>{documentSet.link_groups.length}</strong><span>exact groups</span>
+
+            <div className="workspace-heading-actions">
+              <div className="global-set-search" role="search">
+                <label htmlFor="global-document-search" className="sr-only">
+                  Search all documents in this set
+                </label>
+                <input
+                  id="global-document-search"
+                  type="search"
+                  value={globalSearchQuery}
+                  onChange={(event) => setGlobalSearchQuery(event.target.value)}
+                  onFocus={() => setGlobalSearchOpen(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setGlobalSearchOpen(false);
+                  }}
+                  placeholder="Search all documents"
+                />
+                {globalSearchLoading && <span className="global-search-status">Searching…</span>}
+                {globalSearchOpen && globalSearchQuery.trim().length >= 2 && (
+                  <div className="global-search-results">
+                    {!globalSearchLoading && globalSearchResults.length === 0 ? (
+                      <div className="global-search-empty">No matches in this document set.</div>
+                    ) : (
+                      globalSearchResults.map((result) => (
+                        <button
+                          type="button"
+                          key={result.element_id}
+                          onClick={() => void openGlobalSearchResult(result)}
+                        >
+                          <strong>{result.document_name}</strong>
+                          <span>{result.text}</span>
+                          <small>
+                            {elementLabel(result.element_type)} · Paragraph {result.paragraph_index + 1}
+                          </small>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="set-summary">
+                <strong>{documentSet.documents.length}</strong><span>documents</span>
+                <strong>{documentSet.link_groups.length}</strong><span>exact groups</span>
+              </div>
+
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() =>
+                  void handleDeleteDocumentSet({
+                    id: documentSet.id,
+                    name: documentSet.name,
+                    created_at: documentSet.created_at,
+                    document_count: documentSet.documents.length,
+                    edit_count:
+                      savedSets.find((item) => item.id === documentSet.id)?.edit_count ?? 0,
+                  })
+                }
+                disabled={Boolean(busyAction)}
+              >
+                Delete set
+              </button>
             </div>
           </section>
 
@@ -661,21 +931,58 @@ const canUpload = files.length >= 2 && !busyAction;
           <div className="document-workspace">
             <aside className="file-rail" aria-labelledby="files-title">
               <div className="rail-heading">
-                <span>Files</span><small>{documentSet.documents.length}</small>
+                <span>Files</span>
+                <div className="rail-heading-actions">
+                  <small>{documentSet.documents.length}</small>
+                  <button
+                    type="button"
+                    className="rail-add-button"
+                    onClick={() => addDocumentsInputRef.current?.click()}
+                    disabled={Boolean(busyAction) || documentSet.documents.length >= 20}
+                  >
+                    + Add
+                  </button>
+                  <input
+                    ref={addDocumentsInputRef}
+                    type="file"
+                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    multiple
+                    onChange={(event) => void handleAddDocuments(event)}
+                    className="sr-only"
+                  />
+                </div>
               </div>
               <nav aria-labelledby="files-title">
                 <h2 id="files-title" className="sr-only">Documents in this set</h2>
                 {documentSet.documents.map((document) => (
-                  <button
-                    type="button"
-                    key={document.id}
-                    className={`file-tab ${document.id === activeDocumentId ? "active" : ""}`}
-                    onClick={() => void openDocument(document)}
-                    aria-current={document.id === activeDocumentId ? "page" : undefined}
-                  >
-                    <span className="word-icon" aria-hidden="true">W</span>
-                    <span><strong>{document.name}</strong><small>{document.element_count} elements</small></span>
-                  </button>
+                  <div className="file-tab-row" key={document.id}>
+                    <button
+                      type="button"
+                      className={`file-tab ${document.id === activeDocumentId ? "active" : ""}`}
+                      onClick={() => void openDocument(document)}
+                      aria-current={document.id === activeDocumentId ? "page" : undefined}
+                    >
+                      <span className="word-icon" aria-hidden="true">W</span>
+                      <span>
+                        <strong>{document.name}</strong>
+                        <small>{document.element_count} elements</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="file-remove-button"
+                      onClick={() => void handleRemoveDocument(document)}
+                      disabled={Boolean(busyAction) || documentSet.documents.length <= 2}
+                      aria-label={`Remove ${document.name} from this set`}
+                      title={
+                        documentSet.documents.length <= 2
+                          ? "A set must retain at least two documents"
+                          : `Remove ${document.name}`
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
               </nav>
               <div className="rail-guide">

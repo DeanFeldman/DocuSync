@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import secrets
 
-from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_session, init_db
 from .document_service import (
+    add_documents_to_set,
     current_document_path,
     create_document_set,
+    delete_document_set,
     generate_versions,
     generation_download_path,
     get_document_or_404,
@@ -23,9 +25,11 @@ from .document_service import (
     get_link_group_or_404,
     list_document_sets,
     preview_edit,
+    remove_document_from_set,
     render_document_with_word,
     rendered_pdf_path,
     serialize_document_set_history,
+    search_document_set,
     serialize_document_set,
     serialize_document_view,
 )
@@ -48,7 +52,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
 
@@ -106,6 +110,47 @@ def read_document_set(
     session: Session = Depends(get_session),
 ) -> dict:
     return serialize_document_set(get_document_set_or_404(session, document_set_id))
+
+
+
+@app.post("/api/document-sets/{document_set_id}/documents", status_code=201)
+async def add_document_set_documents(
+    document_set_id: str,
+    files: list[UploadFile] = File(...),
+    session: Session = Depends(get_session),
+) -> dict:
+    return serialize_document_set(
+        await add_documents_to_set(session, document_set_id, files)
+    )
+
+
+@app.delete("/api/document-sets/{document_set_id}/documents/{document_id}")
+def remove_document_set_document(
+    document_set_id: str,
+    document_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    return serialize_document_set(
+        remove_document_from_set(session, document_set_id, document_id)
+    )
+
+
+@app.get("/api/document-sets/{document_set_id}/search")
+def search_documents_in_set(
+    document_set_id: str,
+    q: str = Query(default="", max_length=500),
+    limit: int = Query(default=50, ge=1, le=100),
+    session: Session = Depends(get_session),
+) -> dict:
+    return search_document_set(session, document_set_id, q, limit)
+
+
+@app.delete("/api/document-sets/{document_set_id}")
+def remove_document_set(
+    document_set_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    return delete_document_set(session, document_set_id)
 
 
 @app.post("/api/documents/{document_id}/render")

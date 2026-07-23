@@ -26,6 +26,8 @@ DocSync-Setup-latest.exe
 
 - Upload between 2 and 20 related `.docx` files as a document set.
 - Reopen saved document sets from the local workspace library.
+- Add or remove documents in an existing set, or delete the complete set.
+- Search extracted text across every document in the current set.
 - Open and scroll through each uploaded document.
 - Use a Microsoft Word-generated layout preview when Word is installed.
 - Fall back to a structured selectable preview when Word rendering is unavailable.
@@ -253,6 +255,10 @@ GET  /api/health
 GET  /api/document-sets
 POST /api/document-sets
 GET  /api/document-sets/{document_set_id}
+DELETE /api/document-sets/{document_set_id}
+POST /api/document-sets/{document_set_id}/documents
+DELETE /api/document-sets/{document_set_id}/documents/{document_id}
+GET  /api/document-sets/{document_set_id}/search
 POST /api/documents/{document_id}/render
 GET  /api/document-versions/{version_id}/pages
 GET  /api/document-versions/{version_id}/rendered-file
@@ -281,13 +287,10 @@ GET  /api/generations/{generation_id}/download
 1. Add a read-only history screen.
 2. Add undo and version restoration.
 3. Add a richer before-and-after diff.
-4. Allow documents to be added to or removed from existing sets.
-5. Add global search across a document set.
-6. Add table-cell extraction and editing.
-7. Add fuzzy-match suggestions that require confirmation.
-8. Add direct element selection over the Word layout.
-9. Add authentication, PostgreSQL migrations, and cloud storage when moving beyond local use.
-10. delete document sets and be able to add/remove docs to a particular set
+4. Add table-cell extraction and editing.
+5. Add fuzzy-match suggestions that require confirmation.
+6. Add direct element selection over the Word layout.
+7. Add authentication, PostgreSQL migrations, and cloud storage when moving beyond local use.
 
 ## Safety model
 

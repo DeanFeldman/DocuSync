@@ -91,6 +91,22 @@ export interface DocumentSetResponse {
   link_groups: LinkGroup[];
 }
 
+export interface GlobalSearchResult {
+  element_id: string;
+  document_id: string;
+  document_name: string;
+  paragraph_index: number;
+  element_type: "paragraph" | "heading" | "list_item";
+  text: string;
+}
+
+export interface GlobalSearchResponse {
+  query: string;
+  results: GlobalSearchResult[];
+  result_count: number;
+  truncated: boolean;
+}
+
 export interface PreviewChange {
   element_id: string;
   paragraph_index: number;

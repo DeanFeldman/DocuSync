@@ -241,6 +241,193 @@ async def create_document_set(
     return get_document_set_or_404(session, document_set.id)
 
 
+async def add_documents_to_set(
+    session: Session,
+    document_set_id: str,
+    files: list[UploadFile],
+) -> DocumentSet:
+    # Add DOCX files to an existing set and rebuild exact-match groups.
+    document_set = get_document_set_or_404(session, document_set_id)
+    if not files:
+        raise HTTPException(status_code=422, detail="Choose at least one DOCX file.")
+
+    resulting_count = len(document_set.documents) + len(files)
+    if resulting_count > settings.max_files_per_set:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"A document set may contain at most {settings.max_files_per_set} files. "
+                f"This set currently contains {len(document_set.documents)}."
+            ),
+        )
+
+    seen_names = {document.original_name.casefold() for document in document_set.documents}
+    created_paths: list[Path] = []
+
+    try:
+        for upload in files:
+            original_name = safe_download_name(upload.filename or "document.docx")
+            name_key = original_name.casefold()
+            if name_key in seen_names:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"A document named {original_name} already exists in this set.",
+                )
+            seen_names.add(name_key)
+
+            payload = await upload.read()
+            _validate_docx_payload(original_name, payload)
+            extracted = _extract_paragraphs(payload)
+
+            document_id = new_id()
+            stored_name = f"{document_set.id}/{document_id}.docx"
+            target = settings.data_dir / "originals" / stored_name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+            created_paths.append(target)
+
+            record = DocumentRecord(
+                id=document_id,
+                document_set=document_set,
+                original_name=original_name,
+                stored_name=stored_name,
+                checksum_sha256=hashlib.sha256(payload).hexdigest(),
+            )
+            session.add(record)
+            for paragraph_index, text, style_name in extracted:
+                session.add(
+                    DocumentElement(
+                        id=new_id(),
+                        document=record,
+                        paragraph_index=paragraph_index,
+                        text=text,
+                        normalized_text=normalise_text(text),
+                        style_name=style_name,
+                    )
+                )
+
+        session.flush()
+        _rebuild_exact_link_groups(session, document_set_id)
+        session.commit()
+        session.expire_all()
+    except Exception:
+        session.rollback()
+        for path in created_paths:
+            path.unlink(missing_ok=True)
+        raise
+
+    return get_document_set_or_404(session, document_set_id)
+
+
+def remove_document_from_set(
+    session: Session,
+    document_set_id: str,
+    document_id: str,
+) -> DocumentSet:
+    # Remove one document while preserving the minimum two-document set.
+    document_set = get_document_set_or_404(session, document_set_id)
+    if len(document_set.documents) <= 2:
+        raise HTTPException(
+            status_code=422,
+            detail="A document set must keep at least two documents.",
+        )
+
+    document = next(
+        (item for item in document_set.documents if item.id == document_id),
+        None,
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found in this set.")
+
+    original_path = settings.data_dir / "originals" / document.stored_name
+    rendered_path = rendered_pdf_path(document)
+
+    try:
+        session.delete(document)
+        session.flush()
+        _rebuild_exact_link_groups(session, document_set_id)
+        session.commit()
+        session.expire_all()
+    except Exception:
+        session.rollback()
+        raise
+
+    original_path.unlink(missing_ok=True)
+    rendered_path.unlink(missing_ok=True)
+    return get_document_set_or_404(session, document_set_id)
+
+
+def delete_document_set(session: Session, document_set_id: str) -> dict:
+    # Permanently delete a local set and its stored workspace files.
+    document_set = get_document_set_or_404(session, document_set_id)
+    try:
+        session.delete(document_set)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    for directory in (
+        settings.data_dir / "originals" / document_set_id,
+        settings.data_dir / "renders" / document_set_id,
+        settings.data_dir / "generated" / document_set_id,
+    ):
+        shutil.rmtree(directory, ignore_errors=True)
+
+    return {"deleted_id": document_set_id, "deleted": True}
+
+
+def search_document_set(
+    session: Session,
+    document_set_id: str,
+    query: str,
+    limit: int = 50,
+) -> dict:
+    # Search extracted text across every current document in one set.
+    get_document_set_or_404(session, document_set_id)
+    cleaned_query = WHITESPACE_PATTERN.sub(" ", query).strip()
+    if len(cleaned_query) < 2:
+        return {
+            "query": cleaned_query,
+            "results": [],
+            "result_count": 0,
+            "truncated": False,
+        }
+
+    rows = session.execute(
+        select(DocumentElement, DocumentRecord)
+        .join(DocumentRecord, DocumentElement.document_id == DocumentRecord.id)
+        .where(
+            DocumentRecord.document_set_id == document_set_id,
+            func.lower(DocumentElement.text).contains(cleaned_query.casefold()),
+        )
+        .order_by(
+            DocumentRecord.original_name,
+            DocumentElement.paragraph_index,
+        )
+        .limit(limit + 1)
+    ).all()
+
+    truncated = len(rows) > limit
+    rows = rows[:limit]
+    results = [
+        {
+            "element_id": element.id,
+            "document_id": document.id,
+            "document_name": document.original_name,
+            "paragraph_index": element.paragraph_index,
+            "element_type": element_type_for_style(element.style_name),
+            "text": element.text,
+        }
+        for element, document in rows
+    ]
+    return {
+        "query": cleaned_query,
+        "results": results,
+        "result_count": len(results),
+        "truncated": truncated,
+    }
+
 def _create_exact_link_groups(session: Session, document_set_id: str) -> None:
     elements = session.scalars(
         select(DocumentElement)

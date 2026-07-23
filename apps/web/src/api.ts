@@ -3,6 +3,7 @@ import type {
   DocumentSetLibraryResponse,
   DocumentSetResponse,
   GenerationResponse,
+  GlobalSearchResponse,
   MatchDiscovery,
   PreviewResponse,
 } from "./types";
@@ -65,6 +66,52 @@ export async function uploadDocumentSet(
     body: form,
   });
   return parseResponse<DocumentSetResponse>(response);
+}
+
+
+export async function addDocumentsToSet(
+  documentSetId: string,
+  files: File[],
+): Promise<DocumentSetResponse> {
+  const form = new FormData();
+  for (const file of files) form.append("files", file);
+
+  const response = await fetch(`${API_URL}/document-sets/${documentSetId}/documents`, {
+    method: "POST",
+    body: form,
+  });
+  return parseResponse<DocumentSetResponse>(response);
+}
+
+export async function removeDocumentFromSet(
+  documentSetId: string,
+  documentId: string,
+): Promise<DocumentSetResponse> {
+  const response = await fetch(
+    `${API_URL}/document-sets/${documentSetId}/documents/${documentId}`,
+    { method: "DELETE" },
+  );
+  return parseResponse<DocumentSetResponse>(response);
+}
+
+export async function deleteDocumentSet(
+  documentSetId: string,
+): Promise<{ deleted_id: string; deleted: boolean }> {
+  const response = await fetch(`${API_URL}/document-sets/${documentSetId}`, {
+    method: "DELETE",
+  });
+  return parseResponse<{ deleted_id: string; deleted: boolean }>(response);
+}
+
+export async function searchDocumentSet(
+  documentSetId: string,
+  query: string,
+): Promise<GlobalSearchResponse> {
+  const params = new URLSearchParams({ q: query, limit: "50" });
+  const response = await fetch(
+    `${API_URL}/document-sets/${documentSetId}/search?${params.toString()}`,
+  );
+  return parseResponse<GlobalSearchResponse>(response);
 }
 
 export async function previewEdit(
