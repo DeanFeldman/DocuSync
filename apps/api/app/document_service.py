@@ -250,10 +250,10 @@ def _extract_paragraphs(payload: bytes) -> list[tuple[int, str, str | None]]:
         if table is None:
             continue
 
-        seen_cells: set[int] = set()
+        seen_cells: set[object] = set()
         for row_index, row in enumerate(table.rows):
             for column_index, cell in enumerate(row.cells):
-                cell_key = id(cell._tc)
+                cell_key = cell._tc
                 if cell_key in seen_cells:
                     continue
                 seen_cells.add(cell_key)
