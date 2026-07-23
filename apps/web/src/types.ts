@@ -12,18 +12,24 @@ export interface LinkMember {
   document_id: string;
   document_name: string;
   paragraph_index: number;
-  element_type: "paragraph" | "heading" | "list_item";
+  element_type: "paragraph" | "heading" | "list_item" | "table_cell";
   text: string;
   style_name: string | null;
+  table_index?: number;
+  row_index?: number;
+  column_index?: number;
 }
 
 export interface ViewerElement {
   id: string;
   document_id: string;
   paragraph_index: number;
-  element_type: "paragraph" | "heading" | "list_item";
+  element_type: "paragraph" | "heading" | "list_item" | "table_cell";
   text: string;
   style_name: string | null;
+  table_index?: number;
+  row_index?: number;
+  column_index?: number;
   page_number: number;
 }
 
@@ -55,6 +61,9 @@ export interface MatchDiscovery {
     element_type: string;
     text: string;
     style_name: string | null;
+    table_index?: number;
+    row_index?: number;
+    column_index?: number;
   };
   link_group: LinkGroup | null;
   exact_match_count: number;
@@ -96,7 +105,10 @@ export interface GlobalSearchResult {
   document_id: string;
   document_name: string;
   paragraph_index: number;
-  element_type: "paragraph" | "heading" | "list_item";
+  element_type: "paragraph" | "heading" | "list_item" | "table_cell";
+  table_index?: number;
+  row_index?: number;
+  column_index?: number;
   text: string;
 }
 
@@ -111,6 +123,9 @@ export interface PreviewChange {
   element_id: string;
   paragraph_index: number;
   element_type: string;
+  table_index?: number;
+  row_index?: number;
+  column_index?: number;
   before: string;
   after: string;
 }

@@ -56,7 +56,67 @@ function readableBytes(bytes: number): string {
 
 function elementLabel(elementType: string): string {
   if (elementType === "list_item") return "List item";
+  if (elementType === "table_cell") return "Table cell";
   return elementType.charAt(0).toUpperCase() + elementType.slice(1);
+}
+
+type ElementLocation = {
+  element_type: string;
+  paragraph_index: number;
+  table_index?: number;
+  row_index?: number;
+  column_index?: number;
+};
+
+function elementLocation(element: ElementLocation): string {
+  if (
+    element.element_type === "table_cell" &&
+    element.table_index !== undefined &&
+    element.row_index !== undefined &&
+    element.column_index !== undefined
+  ) {
+    return `Table ${element.table_index + 1} · Row ${element.row_index + 1} · Column ${
+      element.column_index + 1
+    }`;
+  }
+
+  return `${elementLabel(element.element_type)} · Paragraph ${
+    element.paragraph_index + 1
+  }`;
+}
+
+type ViewerBlock =
+  | { kind: "element"; element: ViewerElement }
+  | { kind: "table"; tableIndex: number; cells: ViewerElement[] };
+
+function groupViewerElements(elements: ViewerElement[]): ViewerBlock[] {
+  const blocks: ViewerBlock[] = [];
+
+  for (const element of elements) {
+    if (
+      element.element_type === "table_cell" &&
+      element.table_index !== undefined
+    ) {
+      const previous = blocks.at(-1);
+      if (
+        previous?.kind === "table" &&
+        previous.tableIndex === element.table_index
+      ) {
+        previous.cells.push(element);
+      } else {
+        blocks.push({
+          kind: "table",
+          tableIndex: element.table_index,
+          cells: [element],
+        });
+      }
+      continue;
+    }
+
+    blocks.push({ kind: "element", element });
+  }
+
+  return blocks;
 }
 
 function readableDate(value: string): string {
@@ -201,6 +261,19 @@ const [setNameTouched, setSetNameTouched] = useState(false);
   useEffect(() => {
     setSearchCursor(-1);
   }, [searchQuery, activeDocumentId]);
+
+  useEffect(() => {
+    if (!viewer) return;
+
+    window.requestAnimationFrame(() => {
+      viewerScrollRef.current?.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "auto",
+      });
+      setCurrentPage(1);
+    });
+  }, [activeDocumentId, viewer?.version_id]);
 
   useEffect(() => {
     const container = viewerScrollRef.current;
@@ -630,6 +703,50 @@ async function handleUpload(event: FormEvent) {
       setBusyAction(null);
     }
   }
+  function renderViewerElement(
+    element: ViewerElement,
+    insideTable = false,
+  ) {
+    const isSearchMatch =
+      Boolean(searchQuery.trim()) &&
+      searchMatches.some((match) => match.id === element.id);
+
+    const tableStyle =
+      insideTable &&
+      element.row_index !== undefined &&
+      element.column_index !== undefined
+        ? {
+            gridRow: element.row_index + 1,
+            gridColumn: element.column_index + 1,
+          }
+        : undefined;
+
+    return (
+      <button
+        type="button"
+        id={`element-${element.id}`}
+        key={element.id}
+        className={`document-element ${element.element_type} ${
+          insideTable ? "inside-table" : ""
+        } ${selectedElementId === element.id ? "selected" : ""} ${
+          isSearchMatch ? "search-match" : ""
+        }`}
+        style={tableStyle}
+        onClick={() => void selectElement(element)}
+        aria-pressed={selectedElementId === element.id}
+        aria-label={`Select ${elementLabel(element.element_type)}: ${element.text}`}
+      >
+        <span className="selection-marker" aria-hidden="true">Edit</span>
+        {element.element_type === "table_cell" && (
+          <small className="table-cell-location">
+            {elementLocation(element)}
+          </small>
+        )}
+        <span>{element.text}</span>
+      </button>
+    );
+  }
+
 
 const canUpload = files.length >= 2 && !busyAction;
   const canPreview = Boolean(
@@ -891,9 +1008,7 @@ const canUpload = files.length >= 2 && !busyAction;
                         >
                           <strong>{result.document_name}</strong>
                           <span>{result.text}</span>
-                          <small>
-                            {elementLabel(result.element_type)} · Paragraph {result.paragraph_index + 1}
-                          </small>
+                          <small>{elementLocation(result)}</small>
                         </button>
                       ))
                     )}
@@ -1056,23 +1171,39 @@ const canUpload = files.length >= 2 && !busyAction;
                           <div className="page-content">
                             {page.elements.length === 0 ? (
                               <p className="empty-page">No supported text elements on this page.</p>
-                            ) : page.elements.map((element) => {
-                              const isSearchMatch = Boolean(searchQuery.trim()) && searchMatches.some((match) => match.id === element.id);
-                              return (
-                                <button
-                                  type="button"
-                                  id={`element-${element.id}`}
-                                  key={element.id}
-                                  className={`document-element ${element.element_type} ${selectedElementId === element.id ? "selected" : ""} ${isSearchMatch ? "search-match" : ""}`}
-                                  onClick={() => void selectElement(element)}
-                                  aria-pressed={selectedElementId === element.id}
-                                  aria-label={`Select ${elementLabel(element.element_type)}: ${element.text}`}
-                                >
-                                  <span className="selection-marker" aria-hidden="true">Edit</span>
-                                  {element.text}
-                                </button>
-                              );
-                            })}
+                            ) : (
+                              groupViewerElements(page.elements).map((block, blockIndex) =>
+                                block.kind === "table" ? (
+                                  <section
+                                    className="structured-table"
+                                    key={`table-${block.tableIndex}-${blockIndex}`}
+                                    aria-label={`Table ${block.tableIndex + 1}`}
+                                  >
+                                    <div className="structured-table-heading">
+                                      Table {block.tableIndex + 1}
+                                    </div>
+                                    <div
+                                      className="structured-table-grid"
+                                      style={{
+                                        gridTemplateColumns: `repeat(${
+                                          Math.max(
+                                            ...block.cells.map(
+                                              (cell) => (cell.column_index ?? 0) + 1,
+                                            ),
+                                          )
+                                        }, minmax(120px, 1fr))`,
+                                      }}
+                                    >
+                                      {block.cells.map((cell) =>
+                                        renderViewerElement(cell, true),
+                                      )}
+                                    </div>
+                                  </section>
+                                ) : (
+                                  renderViewerElement(block.element)
+                                ),
+                              )
+                            )}
                           </div>
                         </section>
                       ))}
@@ -1092,13 +1223,13 @@ const canUpload = files.length >= 2 && !busyAction;
                 <div className="sidebar-empty">
                   <span aria-hidden="true">T</span>
                   <h3>{viewMode === "visual" ? "Viewing the Word layout" : "Select text in the document"}</h3>
-                  <p>{viewMode === "visual" ? "This view uses Microsoft Word’s own layout. Switch to Select text when you are ready to choose content to edit." : "Supported paragraphs, headings, and list items highlight as you hover or focus them."}</p>
+                  <p>{viewMode === "visual" ? "This view uses Microsoft Word’s own layout. Switch to Select text when you are ready to choose content to edit." : "Supported paragraphs, headings, list items, and table cells highlight as you hover or focus them."}</p>
                   {viewMode === "visual" && viewer?.pdf_url && <button type="button" className="quiet-button" onClick={() => setViewMode("select")}>Switch to Select text</button>}
                 </div>
               ) : (
                 <div className="edit-flow">
                   <div className="source-card">
-                    <small>Source · Paragraph {selectedElement.paragraph_index + 1}</small>
+                    <small>Source · {elementLocation(selectedElement)}</small>
                     <p>{selectedElement.text}</p>
                   </div>
 
@@ -1121,7 +1252,14 @@ const canUpload = files.length >= 2 && !busyAction;
                                 onChange={() => toggleTarget(member.element_id)}
                                 disabled={isSource}
                               />
-                              <span><strong>{member.document_name}</strong><small>{isSource ? "Source · always included" : `Paragraph ${member.paragraph_index + 1} · Exact match`}</small></span>
+                              <span>
+                                <strong>{member.document_name}</strong>
+                                <small>
+                                  {isSource
+                                    ? `Source · ${elementLocation(member)} · always included`
+                                    : `${elementLocation(member)} · Exact match`}
+                                </small>
+                              </span>
                               <em>{includedElementIds.includes(member.element_id) ? "Included" : "Excluded"}</em>
                             </label>
                           );
@@ -1190,7 +1328,7 @@ const canUpload = files.length >= 2 && !busyAction;
                   <header><span className="word-icon" aria-hidden="true">W</span><div><h3>{document.document_name}</h3><p>{document.changes.length} confirmed location{document.changes.length === 1 ? "" : "s"}</p></div></header>
                   {document.changes.map((change) => (
                     <div className="diff" key={change.element_id}>
-                      <p className="location-label">{elementLabel(change.element_type)} · Paragraph {change.paragraph_index + 1}</p>
+                      <p className="location-label">{elementLocation(change)}</p>
                       <div className="diff-grid">
                         <div className="diff-side before"><span>Before</span><p>{change.before}</p></div>
                         <div className="diff-arrow" aria-hidden="true">→</div>

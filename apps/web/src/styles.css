@@ -1010,3 +1010,89 @@ textarea:focus-visible {
   }
 }
 
+/* Table-cell extraction and editing */
+.document-element.table_cell {
+  display: grid;
+  gap: 7px;
+  padding: calc(12px * var(--page-zoom));
+  border: 1px solid #b9cbe0;
+  border-left: 4px solid #4b87b8;
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(75, 135, 184, 0.045), rgba(75, 135, 184, 0.045)),
+    #fff;
+}
+
+.document-element.table_cell:hover,
+.document-element.table_cell:focus-visible {
+  border-color: #6f9fc5;
+  background: #f1f7fc;
+}
+
+.document-element.table_cell.selected {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(24, 142, 132, 0.12);
+}
+
+.table-cell-location {
+  display: block;
+  color: #52708d;
+  font-size: calc(0.62rem * var(--page-zoom));
+  font-weight: 850;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.document-element.table_cell > span:last-child {
+  display: block;
+}
+
+/* Preserve DOCX table order and rebuild visible table grids. */
+.structured-table {
+  margin: calc(14px * var(--page-zoom)) 0;
+  overflow-x: auto;
+  border: 1px solid #aebfd1;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.structured-table-heading {
+  padding: 7px 10px;
+  border-bottom: 1px solid #c8d4e1;
+  color: #496681;
+  background: #edf4fa;
+  font-size: calc(0.65rem * var(--page-zoom));
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.structured-table-grid {
+  min-width: max-content;
+  display: grid;
+  gap: 1px;
+  background: #b8c6d4;
+}
+
+.document-element.table_cell.inside-table {
+  min-width: 120px;
+  min-height: calc(54px * var(--page-zoom));
+  margin: 0;
+  padding: calc(10px * var(--page-zoom));
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  align-content: start;
+}
+
+.document-element.table_cell.inside-table:hover,
+.document-element.table_cell.inside-table:focus-visible {
+  background: #edf6fc;
+}
+
+.document-element.table_cell.inside-table.selected {
+  position: relative;
+  z-index: 1;
+  background: #e8f7f4;
+  box-shadow: inset 0 0 0 3px var(--teal);
+}
