@@ -10,6 +10,8 @@ import type { CSSProperties } from "react";
 import {
   absoluteApiUrl,
   absoluteDownloadUrl,
+  fetchDocumentSet,
+  fetchDocumentSets,
   fetchDocumentView,
   fetchElementMatches,
   generateEdit,
@@ -17,6 +19,7 @@ import {
   uploadDocumentSet,
 } from "./api";
 import type {
+  DocumentSetLibraryItem,
   DocumentSetResponse,
   DocumentSummary,
   DocumentView,
@@ -28,7 +31,14 @@ import type {
 
 import docSyncLogo from "./assets/Docsync LOGO.png";
 
-type BusyAction = "upload" | "view" | "matches" | "preview" | "generate" | null;
+type BusyAction =
+  | "upload"
+  | "open-set"
+  | "view"
+  | "matches"
+  | "preview"
+  | "generate"
+  | null;
 
 function readableBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -41,10 +51,25 @@ function elementLabel(elementType: string): string {
   return elementType.charAt(0).toUpperCase() + elementType.slice(1);
 }
 
+function readableDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Saved locally";
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function App() {
-  const [setName, setSetName] = useState("Building agreements");
+const [setName, setSetName] = useState("");
+const [setNameTouched, setSetNameTouched] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [documentSet, setDocumentSet] = useState<DocumentSetResponse | null>(null);
+  const [savedSets, setSavedSets] = useState<DocumentSetLibraryItem[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(true);
+  const [libraryError, setLibraryError] = useState("");
+  const [openingSetId, setOpeningSetId] = useState("");
   const [activeDocumentId, setActiveDocumentId] = useState("");
   const [viewer, setViewer] = useState<DocumentView | null>(null);
   const [selectedElementId, setSelectedElementId] = useState("");
@@ -67,6 +92,11 @@ function App() {
     [activeDocumentId, documentSet],
   );
 
+  const setNameError =
+  setNameTouched && setName.trim() === ""
+    ? "Enter a document-set name."
+    : "";
+
   const selectedElement = useMemo(() => {
     return (
       viewer?.pages
@@ -82,6 +112,32 @@ function App() {
       .flatMap((page) => page.elements)
       .filter((element) => element.text.toLocaleLowerCase().includes(query));
   }, [searchQuery, viewer]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLibrary() {
+      setLibraryLoading(true);
+      setLibraryError("");
+      try {
+        const response = await fetchDocumentSets();
+        if (!cancelled) setSavedSets(response.document_sets);
+      } catch (caught) {
+        if (!cancelled) {
+          setLibraryError(
+            caught instanceof Error ? caught.message : "Saved workspaces could not be loaded.",
+          );
+        }
+      } finally {
+        if (!cancelled) setLibraryLoading(false);
+      }
+    }
+
+    void loadLibrary();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setSearchCursor(-1);
@@ -123,6 +179,21 @@ function App() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [busyAction, preview]);
 
+  useEffect(() => {
+    if (!window.history.state?.view) {
+      window.history.replaceState({ view: "home" }, "");
+    }
+
+    function handlePopState() {
+      if (window.history.state?.view !== "workspace") {
+        resetWorkspace(false);
+      }
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   function clearSelection() {
     setSelectedElementId("");
     setDiscovery(null);
@@ -131,7 +202,16 @@ function App() {
     setPreview(null);
   }
 
-  function resetWorkspace() {
+  function resetWorkspace(updateHistory = true) {
+    if (
+      updateHistory &&
+      documentSet &&
+      window.history.state?.view === "workspace"
+    ) {
+      window.history.back();
+      return;
+    }
+
     setDocumentSet(null);
     setActiveDocumentId("");
     setViewer(null);
@@ -146,28 +226,83 @@ function App() {
     setError("");
   }
 
-  async function handleUpload(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    setBusyAction("upload");
-    try {
-      const uploaded = await uploadDocumentSet(setName, files);
-      if (uploaded.documents.some((document) => !document.version_id)) {
-        throw new Error(
-          "The local document service is an older DocumentSync version. Close and reopen the application, then try again.",
-        );
-      }
-      setDocumentSet(uploaded);
-      const firstDocument = uploaded.documents[0];
-      if (firstDocument) {
-        setActiveDocumentId(firstDocument.id);
-        const rendered = await fetchDocumentView(firstDocument.version_id);
-        setViewer(rendered);
-        setViewMode(rendered.pdf_url ? "visual" : "select");
-      }
+  async function openWorkspace(workspace: DocumentSetResponse) {
+    if (workspace.documents.some((document) => !document.version_id)) {
+      throw new Error(
+        "The local document service is an older DocumentSync version. Close and reopen the application, then try again.",
+      );
+    }
+
+    const firstDocument = workspace.documents[0] ?? null;
+    const rendered = firstDocument
+      ? await fetchDocumentView(firstDocument.version_id)
+      : null;
+
+    if (
+      window.history.state?.view !== "workspace" ||
+      window.history.state?.documentSetId !== workspace.id
+    ) {
+      window.history.pushState(
+        { view: "workspace", documentSetId: workspace.id },
+        "",
+      );
+    }
+
+    setDocumentSet(workspace);
+    setActiveDocumentId(firstDocument?.id ?? "");
+    setViewer(rendered);
+    setViewMode(rendered?.pdf_url ? "visual" : "select");
+    setCurrentPage(1);
+    setSearchQuery("");
+    setGeneration(null);
+    clearSelection();
+  }
+
+async function handleUpload(event: FormEvent) {
+  event.preventDefault();
+
+  setSetNameTouched(true);
+
+  const trimmedSetName = setName.trim();
+
+  if (!trimmedSetName) {
+    return;
+  }
+
+  setError("");
+  setBusyAction("upload");
+
+  try {
+    const uploaded = await uploadDocumentSet(trimmedSetName, files);
+      await openWorkspace(uploaded);
+      setFiles([]);
+      setSavedSets((current) => [
+        {
+          id: uploaded.id,
+          name: uploaded.name,
+          created_at: uploaded.created_at,
+          document_count: uploaded.documents.length,
+          edit_count: 0,
+        },
+        ...current.filter((item) => item.id !== uploaded.id),
+      ]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The upload failed.");
     } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function openSavedWorkspace(item: DocumentSetLibraryItem) {
+    setError("");
+    setBusyAction("open-set");
+    setOpeningSetId(item.id);
+    try {
+      await openWorkspace(await fetchDocumentSet(item.id));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The saved workspace could not open.");
+    } finally {
+      setOpeningSetId("");
       setBusyAction(null);
     }
   }
@@ -279,6 +414,18 @@ function App() {
       );
       setDocumentSet(result.document_set);
       setGeneration(result);
+      setSavedSets((current) =>
+        current.map((item) =>
+          item.id === result.document_set.id
+            ? {
+                ...item,
+                name: result.document_set.name,
+                document_count: result.document_set.documents.length,
+                edit_count: item.edit_count + 1,
+              }
+            : item,
+        ),
+      );
       setPreview(null);
       clearSelection();
       setViewer(null);
@@ -310,7 +457,7 @@ function App() {
     }
   }
 
-  const canUpload = setName.trim().length > 0 && files.length >= 2 && !busyAction;
+const canUpload = files.length >= 2 && !busyAction;
   const canPreview = Boolean(
     documentSet &&
       discovery?.link_group &&
@@ -321,7 +468,7 @@ function App() {
   );
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${documentSet ? "workspace-mode" : ""}`}>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="DocSync home">
           <img
@@ -334,8 +481,8 @@ function App() {
         <div className="topbar-actions">
           <span className="release-pill">Desktop v1</span>
           {documentSet && (
-            <button type="button" className="quiet-button" onClick={resetWorkspace}>
-              New document set
+            <button type="button" className="quiet-button" onClick={() => resetWorkspace()}>
+              Home
             </button>
           )}
         </div>
@@ -370,16 +517,46 @@ function App() {
 
             {error && <ErrorAlert message={error} />}
 
-            <form className="upload-panel" onSubmit={handleUpload}>
+<form
+  className="upload-panel"
+  onSubmit={handleUpload}
+  noValidate
+>
               <label className="field">
                 <span>Document-set name</span>
+
                 <input
                   value={setName}
-                  onChange={(event) => setSetName(event.target.value)}
+                  onChange={(event) => {
+                    setSetName(event.target.value);
+                    setSetNameTouched(true);
+                  }}
+                  onBlur={() => setSetNameTouched(true)}
                   maxLength={200}
                   placeholder="Example: Building agreements"
+                  aria-required="true"
+                  aria-invalid={Boolean(setNameError)}
+                  aria-describedby={setNameError ? "set-name-error" : undefined}
                 />
+
+                {setNameError && (
+                  <small
+                    id="set-name-error"
+                    className="field-error"
+                    role="alert"
+                  >
+                    {setNameError}
+                  </small>
+                )}
+
+                <div className="workspace-name-preview">
+                  <span>Workspace preview</span>
+                  <strong>
+                    {setName.trim() || "Your document-set name will appear here"}
+                  </strong>
+                </div>
               </label>
+
               <label className="file-drop">
                 <input
                   type="file"
@@ -412,6 +589,58 @@ function App() {
                 {busyAction === "upload" ? "Preparing workspace…" : "Upload and open workspace"}
               </button>
             </form>
+
+            <section className="saved-library" aria-labelledby="saved-library-title">
+              <div className="saved-library-heading">
+                <div>
+                  <p className="eyebrow">Continue working</p>
+                  <h2 id="saved-library-title">Saved workspaces</h2>
+                </div>
+                <p>Reopen a document set stored on this computer without uploading it again.</p>
+              </div>
+
+              {libraryLoading ? (
+                <div className="saved-library-state" role="status">Loading saved workspaces…</div>
+              ) : libraryError ? (
+                <div className="saved-library-state error" role="alert">
+                  <strong>Saved workspaces are unavailable.</strong>
+                  <span>{libraryError}</span>
+                </div>
+              ) : savedSets.length === 0 ? (
+                <div className="saved-library-state">
+                  <strong>No saved workspaces yet.</strong>
+                  <span>Your first uploaded document set will appear here automatically.</span>
+                </div>
+              ) : (
+                <div className="saved-workspace-grid">
+                  {savedSets.map((item) => (
+                    <button
+                      type="button"
+                      className="saved-workspace-card"
+                      key={item.id}
+                      onClick={() => void openSavedWorkspace(item)}
+                      disabled={Boolean(busyAction)}
+                    >
+                      <span className="saved-workspace-icon" aria-hidden="true">W</span>
+                      <span className="saved-workspace-copy">
+                        <strong>{item.name}</strong>
+                        <small>Saved {readableDate(item.created_at)}</small>
+                        <span className="saved-workspace-stats">
+                          {item.document_count} document{item.document_count === 1 ? "" : "s"}
+                          <i aria-hidden="true">·</i>
+                          {item.edit_count} edit{item.edit_count === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                      <span className="saved-workspace-open">
+                        {busyAction === "open-set" && openingSetId === item.id
+                          ? "Opening…"
+                          : "Open workspace"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           </section>
         </main>
       ) : (

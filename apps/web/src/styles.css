@@ -68,6 +68,49 @@ textarea:focus-visible {
   text-decoration: none;
 }
 
+.field input::placeholder {
+  color: #8b98aa;
+  opacity: 1;
+}
+
+.field-error {
+  margin-top: 2px;
+  color: var(--danger);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 4px rgba(164, 60, 66, 0.09);
+}
+
+.workspace-name-preview {
+  margin-top: 5px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f7f9fc;
+}
+
+.workspace-name-preview span,
+.workspace-name-preview strong {
+  display: block;
+}
+
+.workspace-name-preview span {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.workspace-name-preview strong {
+  color: var(--ink);
+  font-size: 0.84rem;
+}
 .brand-mark {
   width: 39px;
   height: 39px;
@@ -539,3 +582,88 @@ textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* Saved document-set library */
+.saved-library { margin-top: 38px; }
+.saved-library-heading { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 17px; }
+.saved-library-heading h2 { margin: 0; font-size: clamp(1.45rem, 2.4vw, 1.95rem); letter-spacing: -0.035em; }
+.saved-library-heading > p { max-width: 410px; margin: 0; color: var(--muted); text-align: right; line-height: 1.5; font-size: 0.84rem; }
+.saved-workspace-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.saved-workspace-card { width: 100%; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 13px; padding: 17px; border: 1px solid var(--line); border-radius: 15px; color: var(--ink); background: #fff; text-align: left; cursor: pointer; box-shadow: 0 8px 24px rgba(25, 42, 68, 0.06); transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
+.saved-workspace-card:hover:not(:disabled) { transform: translateY(-2px); border-color: #9db7d0; box-shadow: 0 13px 30px rgba(25, 42, 68, 0.1); }
+.saved-workspace-card:disabled { cursor: wait; opacity: 0.66; }
+.saved-workspace-icon { width: 41px; height: 41px; display: grid; place-items: center; border-radius: 11px; color: #fff; background: #2567a1; font-weight: 900; }
+.saved-workspace-copy { min-width: 0; }
+.saved-workspace-copy strong, .saved-workspace-copy small, .saved-workspace-stats { display: block; }
+.saved-workspace-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
+.saved-workspace-copy small { margin-top: 4px; color: var(--muted); font-size: 0.7rem; }
+.saved-workspace-stats { margin-top: 8px; color: #4f6074; font-size: 0.72rem; font-weight: 750; }
+.saved-workspace-stats i { margin: 0 6px; color: #9aa7b7; font-style: normal; }
+.saved-workspace-open { color: var(--navy); font-size: 0.72rem; font-weight: 900; white-space: nowrap; }
+.saved-library-state { min-height: 92px; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 18px; border: 1px dashed #bdcad8; border-radius: 14px; color: var(--muted); background: #f8fafc; font-size: 0.8rem; }
+.saved-library-state strong { color: var(--ink); }
+.saved-library-state.error { border-style: solid; border-color: #efcaca; color: var(--danger); background: var(--danger-soft); }
+
+@media (max-width: 760px) {
+  .saved-library-heading { display: block; }
+  .saved-library-heading > p { margin-top: 8px; text-align: left; }
+  .saved-workspace-grid { grid-template-columns: 1fr; }
+  .saved-workspace-card { grid-template-columns: auto minmax(0, 1fr); }
+  .saved-workspace-open { grid-column: 2; }
+}
+
+/* Keep an open workspace fixed to the Electron window. */
+.workspace-mode {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-mode .topbar {
+  flex: 0 0 72px;
+}
+
+.workspace-mode .phase-two-main {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-mode .workspace-heading,
+.workspace-mode .phase-two-main > .alert {
+  flex: 0 0 auto;
+}
+
+.workspace-mode .document-workspace {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.workspace-mode .file-rail,
+.workspace-mode .viewer-panel,
+.workspace-mode .edit-sidebar {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-mode .file-rail nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.workspace-mode .viewer-scroll {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.workspace-mode .edit-sidebar {
+  overflow-y: auto;
+}
+

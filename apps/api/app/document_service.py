@@ -16,8 +16,9 @@ from docx import Document
 from docx.document import Document as DocxDocument
 from docx.text.paragraph import Paragraph
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
+from datetime import datetime, timezone
 
 from .config import settings
 from .models import (
@@ -37,6 +38,15 @@ WHITESPACE_PATTERN = re.compile(r"\s+")
 PAGE_LAYOUT_UNITS = 18
 WORD_RENDER_LOCK = threading.Lock()
 
+def utc_isoformat(value: datetime) -> str:
+    """Return a consistent timezone-aware UTC timestamp."""
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+
+    return value.isoformat()
 
 def new_id() -> str:
     return str(uuid4())
@@ -274,7 +284,50 @@ def _rebuild_exact_link_groups(session: Session, document_set_id: str) -> None:
     session.flush()
     _create_exact_link_groups(session, document_set_id)
 
+def list_document_sets(session: Session) -> dict:
+    """Return lightweight saved-workspace summaries."""
 
+    document_count = (
+        select(func.count(DocumentRecord.id))
+        .where(DocumentRecord.document_set_id == DocumentSet.id)
+        .correlate(DocumentSet)
+        .scalar_subquery()
+    )
+
+    edit_count = (
+        select(func.count(GenerationJob.id))
+        .where(
+            GenerationJob.document_set_id == DocumentSet.id,
+            GenerationJob.status == "completed",
+        )
+        .correlate(DocumentSet)
+        .scalar_subquery()
+    )
+
+    rows = session.execute(
+        select(
+            DocumentSet.id.label("id"),
+            DocumentSet.name.label("name"),
+            DocumentSet.created_at.label("created_at"),
+            document_count.label("document_count"),
+            edit_count.label("edit_count"),
+        ).order_by(DocumentSet.created_at.desc())
+    ).mappings().all()
+
+    return {
+        "document_sets": [
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "created_at": utc_isoformat(row["created_at"]),
+                "document_count": int(row["document_count"] or 0),
+                "edit_count": int(row["edit_count"] or 0),
+            }
+            for row in rows
+        ]
+    }
+    
+    
 def get_document_set_or_404(session: Session, document_set_id: str) -> DocumentSet:
     document_set = session.scalar(
         select(DocumentSet)
@@ -301,7 +354,7 @@ def serialize_document_set(document_set: DocumentSet) -> dict:
     return {
         "id": document_set.id,
         "name": document_set.name,
-        "created_at": document_set.created_at.isoformat(),
+        "created_at": utc_isoformat(document_set.created_at),
         "documents": [
             {
                 "id": document.id,
@@ -771,7 +824,7 @@ def serialize_document_set_history(session: Session, document_set_id: str) -> di
                 "generation_id": job.id,
                 "event_type": "synchronised_edit",
                 "status": job.status,
-                "created_at": job.created_at.isoformat(),
+                "created_at": utc_isoformat(job.created_at),
                 "replacement_text": job.replacement_text,
                 "target_count": len(job.targets),
                 "version_count": len(job.versions),

@@ -188,6 +188,13 @@ function createWindow() {
     if (!isTrustedUrl(targetUrl)) event.preventDefault();
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.on("app-command", (_event, command) => {
+    if (command !== "browser-backward") return;
+
+    void mainWindow.webContents.executeJavaScript(
+      'if (window.history.state?.view === "workspace") window.history.back();',
+    );
+  });
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.on("closed", () => { mainWindow = null; });
   mainWindow.loadURL(backendOrigin).catch((error) => {

@@ -84,6 +84,70 @@ def test_built_desktop_frontend_is_served_by_the_api(tmp_path: Path, monkeypatch
         assert client.get("/assets/app.js").status_code == 200
 
 
+def test_saved_document_set_library_lists_and_reopens_workspaces(tmp_path: Path) -> None:
+    shared = "The building manager must submit the report every month."
+    app = load_test_app(tmp_path)
+
+    with TestClient(app) as client:
+        empty_library = client.get("/api/document-sets")
+        assert empty_library.status_code == 200
+        assert empty_library.json() == {"document_sets": []}
+
+        uploaded = client.post(
+            "/api/document-sets",
+            data={"name": "Saved building agreements"},
+            files=[
+                (
+                    "files",
+                    (
+                        "Building-A.docx",
+                        io.BytesIO(make_docx("Building A", "1 Alpha Road", shared)),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                ),
+                (
+                    "files",
+                    (
+                        "Building-B.docx",
+                        io.BytesIO(make_docx("Building B", "2 Beta Avenue", shared)),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                ),
+            ],
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        workspace = uploaded.json()
+        group = next(
+            item for item in workspace["link_groups"] if item["representative_text"] == shared
+        )
+
+        generated = client.post(
+            f"/api/document-sets/{workspace['id']}/generate",
+            json={
+                "link_group_id": group["id"],
+                "replacement_text": "The building manager must submit the report every Friday.",
+            },
+        )
+        assert generated.status_code == 201, generated.text
+
+        library = client.get("/api/document-sets")
+        assert library.status_code == 200
+        assert library.json()["document_sets"] == [
+            {
+                "id": workspace["id"],
+                "name": "Saved building agreements",
+                "created_at": workspace["created_at"],
+                "document_count": 2,
+                "edit_count": 1,
+            }
+        ]
+
+        reopened = client.get(f"/api/document-sets/{workspace['id']}")
+        assert reopened.status_code == 200
+        assert reopened.json()["id"] == workspace["id"]
+        assert len(reopened.json()["documents"]) == 2
+
+
 def test_exact_match_preview_generation_and_original_immutability(tmp_path: Path) -> None:
     shared = "The building manager must submit the report every month."
     replacement = (
