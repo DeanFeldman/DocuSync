@@ -32,7 +32,7 @@ DocSync-Setup-latest.exe
 - Use a Microsoft Word-generated layout preview when Word is installed.
 - Fall back to a structured selectable preview when Word rendering is unavailable.
 - Search visible document text.
-- Select supported paragraphs, headings, and list items.
+- Select supported paragraphs, headings, list items, and non-empty table cells.
 - Find exact repeated content across multiple documents.
 - Include or exclude each matching location before applying an edit.
 - Preview every affected document and paragraph.
@@ -275,7 +275,8 @@ GET  /api/generations/{generation_id}/download
 - The Microsoft Word layout preview is read-only.
 - Microsoft Word must be installed for high-fidelity layout rendering.
 - Direct text selection currently happens in the structured preview rather than over the Word layout.
-- Selectable content is currently focused on paragraphs, headings, and list items.
+- Selectable content includes paragraphs, headings, list items, and non-empty top-level table cells.
+- Nested tables and complex merged-cell editing are not fully supported yet.
 - Tables, headers, footers, comments, tracked changes, text boxes, and other advanced Word elements are not fully editable yet.
 - Exact matching currently normalises whitespace and letter case.
 - Replacements preserve the paragraph style and first text-run formatting, but complex mixed formatting is not guaranteed.
@@ -287,10 +288,8 @@ GET  /api/generations/{generation_id}/download
 1. Add a read-only history screen.
 2. Add undo and version restoration.
 3. Add a richer before-and-after diff.
-4. Add table-cell extraction and editing.
-5. Add fuzzy-match suggestions that require confirmation.
-6. Add direct element selection over the Word layout.
-7. Add authentication, PostgreSQL migrations, and cloud storage when moving beyond local use.
+4. Add direct element selection over the Word layout.
+5. Add authentication, PostgreSQL migrations, and cloud storage when moving beyond local use.
 
 ## Safety model
 

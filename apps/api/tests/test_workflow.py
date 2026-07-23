@@ -40,6 +40,42 @@ def make_typed_docx(title: str, shared: str, shared_is_heading: bool) -> bytes:
     return stream.getvalue()
 
 
+def make_table_docx(title: str, shared_cell: str, unique_cell: str) -> bytes:
+    stream = io.BytesIO()
+    document = Document()
+    document.add_heading(title, level=1)
+    document.add_paragraph("The editable values are stored in the table below.")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Field"
+    table.cell(0, 1).text = "Value"
+    table.cell(1, 0).text = unique_cell
+    table.cell(1, 1).text = shared_cell
+    document.save(stream)
+    return stream.getvalue()
+
+def make_multi_table_docx(title: str) -> bytes:
+    stream = io.BytesIO()
+    document = Document()
+    document.add_heading(title, level=1)
+
+    first_table = document.add_table(rows=2, cols=2)
+    first_table.cell(0, 0).text = "First table heading"
+    first_table.cell(0, 1).text = "First table value"
+    first_table.cell(1, 0).text = "First row label"
+    first_table.cell(1, 1).text = "First row content"
+
+    document.add_paragraph("Text between the two tables.")
+
+    second_table = document.add_table(rows=2, cols=2)
+    second_table.cell(0, 0).text = "Second table heading"
+    second_table.cell(0, 1).text = "Second table value"
+    second_table.cell(1, 0).text = "Second row label"
+    second_table.cell(1, 1).text = "Second row content"
+
+    document.add_paragraph("Closing paragraph after the second table.")
+    document.save(stream)
+    return stream.getvalue()
+
 def load_test_app(tmp_path: Path):
     os.environ["DOCUMENTSYNC_DATA_DIR"] = str(tmp_path / "data")
     os.environ["DOCUMENTSYNC_DATABASE_URL"] = f"sqlite:///{tmp_path / 'test.db'}"
@@ -518,3 +554,173 @@ def test_set_management_and_global_search(tmp_path: Path) -> None:
         assert client.get(f"/api/document-sets/{workspace['id']}").status_code == 404
         assert client.get("/api/document-sets").json() == {"document_sets": []}
         assert not (tmp_path / "data" / "originals" / workspace["id"]).exists()
+
+def test_table_cells_are_extracted_matched_and_edited(tmp_path: Path) -> None:
+    shared = "Monthly compliance review"
+    replacement = "Quarterly compliance review"
+    originals = {
+        "Alpha-table.docx": make_table_docx("Alpha", shared, "Alpha owner"),
+        "Beta-table.docx": make_table_docx("Beta", shared, "Beta owner"),
+    }
+
+    app = load_test_app(tmp_path)
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/api/document-sets",
+            data={"name": "Table-cell agreements"},
+            files=[
+                (
+                    "files",
+                    (
+                        name,
+                        io.BytesIO(payload),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                )
+                for name, payload in originals.items()
+            ],
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        workspace = uploaded.json()
+
+        group = next(
+            item
+            for item in workspace["link_groups"]
+            if item["representative_text"] == shared
+            and item["members"][0]["element_type"] == "table_cell"
+        )
+        assert group["document_count"] == 2
+        assert all(member["table_index"] == 0 for member in group["members"])
+        assert all(member["row_index"] == 1 for member in group["members"])
+        assert all(member["column_index"] == 1 for member in group["members"])
+
+        first_document = workspace["documents"][0]
+        view = client.get(first_document["view_url"])
+        assert view.status_code == 200
+        table_elements = [
+            element
+            for page in view.json()["pages"]
+            for element in page["elements"]
+            if element["element_type"] == "table_cell"
+        ]
+        assert any(element["text"] == shared for element in table_elements)
+
+        search = client.get(
+            f"/api/document-sets/{workspace['id']}/search",
+            params={"q": "monthly compliance"},
+        )
+        assert search.status_code == 200
+        assert search.json()["result_count"] == 2
+        assert all(
+            result["element_type"] == "table_cell"
+            for result in search.json()["results"]
+        )
+
+        preview = client.post(
+            f"/api/document-sets/{workspace['id']}/preview",
+            json={
+                "link_group_id": group["id"],
+                "replacement_text": replacement,
+                "source_element_id": group["members"][0]["element_id"],
+                "included_element_ids": [
+                    member["element_id"] for member in group["members"]
+                ],
+            },
+        )
+        assert preview.status_code == 200, preview.text
+        assert all(
+            change["table_index"] == 0
+            and change["row_index"] == 1
+            and change["column_index"] == 1
+            for document in preview.json()["documents"]
+            for change in document["changes"]
+        )
+
+        generated = client.post(
+            f"/api/document-sets/{workspace['id']}/generate",
+            json={
+                "link_group_id": group["id"],
+                "replacement_text": replacement,
+                "source_element_id": group["members"][0]["element_id"],
+                "included_element_ids": [
+                    member["element_id"] for member in group["members"]
+                ],
+            },
+        )
+        assert generated.status_code == 201, generated.text
+
+        for document in generated.json()["document_set"]["documents"]:
+            current = client.get(f"/api/documents/{document['id']}/download")
+            assert current.status_code == 200
+            updated_docx = Document(io.BytesIO(current.content))
+            assert updated_docx.tables[0].cell(1, 1).text == replacement
+
+            original_path = (
+                tmp_path
+                / "data"
+                / "originals"
+                / workspace["id"]
+                / f"{document['id']}.docx"
+            )
+            assert hashlib.sha256(original_path.read_bytes()).hexdigest() == document[
+                "checksum_sha256"
+            ]
+
+def test_multiple_tables_keep_document_order_on_first_page(tmp_path: Path) -> None:
+    app = load_test_app(tmp_path)
+
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/api/document-sets",
+            data={"name": "Multiple table documents"},
+            files=[
+                (
+                    "files",
+                    (
+                        "Alpha-multiple-tables.docx",
+                        io.BytesIO(make_multi_table_docx("Alpha")),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                ),
+                (
+                    "files",
+                    (
+                        "Beta-multiple-tables.docx",
+                        io.BytesIO(make_multi_table_docx("Beta")),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                ),
+            ],
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        workspace = uploaded.json()
+
+        view = client.get(workspace["documents"][0]["view_url"])
+        assert view.status_code == 200, view.text
+
+        elements = [
+            element
+            for page in view.json()["pages"]
+            for element in page["elements"]
+        ]
+        texts = [element["text"] for element in elements]
+
+        assert "First table heading" in texts
+        assert "First row content" in texts
+        assert "Second table heading" in texts
+        assert "Second row content" in texts
+
+        assert texts.index("First table heading") < texts.index(
+            "Text between the two tables."
+        )
+        assert texts.index("Text between the two tables.") < texts.index(
+            "Second table heading"
+        )
+        assert texts.index("Second table heading") < texts.index(
+            "Closing paragraph after the second table."
+        )
+
+        first_page_texts = {
+            element["text"] for element in view.json()["pages"][0]["elements"]
+        }
+        assert "First table heading" in first_page_texts
