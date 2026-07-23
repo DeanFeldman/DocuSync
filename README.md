@@ -25,6 +25,7 @@ DocSync-Setup-latest.exe
 ## Main features
 
 - Upload between 2 and 20 related `.docx` files as a document set.
+- Reopen saved document sets from the local workspace library.
 - Open and scroll through each uploaded document.
 - Use a Microsoft Word-generated layout preview when Word is installed.
 - Fall back to a structured selectable preview when Word rendering is unavailable.
@@ -249,6 +250,7 @@ DocuSync/
 
 ```text
 GET  /api/health
+GET  /api/document-sets
 POST /api/document-sets
 GET  /api/document-sets/{document_set_id}
 POST /api/documents/{document_id}/render
@@ -276,16 +278,16 @@ GET  /api/generations/{generation_id}/download
 
 ## Recommended next build order
 
-1. Add a saved document-set library.
-2. Add a read-only history screen.
-3. Add undo and version restoration.
-4. Add a richer before-and-after diff.
-5. Allow documents to be added to or removed from existing sets.
-6. Add global search across a document set.
-7. Add table-cell extraction and editing.
-8. Add fuzzy-match suggestions that require confirmation.
-9. Add direct element selection over the Word layout.
-10. Add authentication, PostgreSQL migrations, and cloud storage when moving beyond local use.
+1. Add a read-only history screen.
+2. Add undo and version restoration.
+3. Add a richer before-and-after diff.
+4. Allow documents to be added to or removed from existing sets.
+5. Add global search across a document set.
+6. Add table-cell extraction and editing.
+7. Add fuzzy-match suggestions that require confirmation.
+8. Add direct element selection over the Word layout.
+9. Add authentication, PostgreSQL migrations, and cloud storage when moving beyond local use.
+10. delete document sets and be able to add/remove docs to a particular set
 
 ## Safety model
 

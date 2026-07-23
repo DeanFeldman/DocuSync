@@ -21,6 +21,7 @@ from .document_service import (
     get_element_matches_or_404,
     get_generation_or_404,
     get_link_group_or_404,
+    list_document_sets,
     preview_edit,
     render_document_with_word,
     rendered_pdf_path,
@@ -82,6 +83,11 @@ async def secure_local_application(request: Request, call_next):
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/document-sets")
+def read_document_sets(session: Session = Depends(get_session)) -> dict:
+    return list_document_sets(session)
 
 
 @app.post("/api/document-sets", status_code=201)

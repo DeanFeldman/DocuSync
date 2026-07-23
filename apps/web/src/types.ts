@@ -71,6 +71,18 @@ export interface LinkGroup {
   members: LinkMember[];
 }
 
+export interface DocumentSetLibraryItem {
+  id: string;
+  name: string;
+  created_at: string;
+  document_count: number;
+  edit_count: number;
+}
+
+export interface DocumentSetLibraryResponse {
+  document_sets: DocumentSetLibraryItem[];
+}
+
 export interface DocumentSetResponse {
   id: string;
   name: string;

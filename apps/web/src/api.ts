@@ -1,5 +1,6 @@
 import type {
   DocumentView,
+  DocumentSetLibraryResponse,
   DocumentSetResponse,
   GenerationResponse,
   MatchDiscovery,
@@ -35,6 +36,18 @@ async function parseResponse<T>(response: Response): Promise<T> {
     // Keep the HTTP status fallback when the body is not JSON.
   }
   throw new Error(message);
+}
+
+export async function fetchDocumentSets(): Promise<DocumentSetLibraryResponse> {
+  const response = await fetch(`${API_URL}/document-sets`);
+  return parseResponse<DocumentSetLibraryResponse>(response);
+}
+
+export async function fetchDocumentSet(
+  documentSetId: string,
+): Promise<DocumentSetResponse> {
+  const response = await fetch(`${API_URL}/document-sets/${documentSetId}`);
+  return parseResponse<DocumentSetResponse>(response);
 }
 
 export async function uploadDocumentSet(
@@ -95,12 +108,19 @@ export async function generateEdit(
 }
 
 export async function fetchDocumentView(versionId: string): Promise<DocumentView> {
+  // Open the lightweight structured preview immediately.
+  // Microsoft Word rendering is intentionally not triggered during workspace loading.
+  const response = await fetch(`${API_URL}/document-versions/${versionId}/pages`);
+  return parseResponse<DocumentView>(response);
+}
+
+export async function renderDocumentView(versionId: string): Promise<DocumentView> {
+  // Keep Word rendering available for a future explicit "Word preview" button.
   const response = await fetch(`${API_URL}/documents/${versionId}/render`, {
     method: "POST",
   });
   if ([422, 503, 504].includes(response.status)) {
-    const fallback = await fetch(`${API_URL}/document-versions/${versionId}/pages`);
-    return parseResponse<DocumentView>(fallback);
+    return fetchDocumentView(versionId);
   }
   return parseResponse<DocumentView>(response);
 }
