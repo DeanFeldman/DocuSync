@@ -1,47 +1,89 @@
 # DocSync
 
-[![Desktop CI](https://github.com/DeanFeldman/DocuSync/actions/workflows/phase3-desktop.yml/badge.svg)](https://github.com/DeanFeldman/DocuSync/actions/workflows/phase3-desktop.yml)
-[![Release](https://github.com/DeanFeldman/DocuSync/actions/workflows/release.yml/badge.svg)](https://github.com/DeanFeldman/DocuSync/actions/workflows/release.yml)
+[![Desktop CI](https://github.com/DeanFeldman/DocSync/actions/workflows/phase3-desktop.yml/badge.svg)](https://github.com/DeanFeldman/DocSync/actions/workflows/phase3-desktop.yml)
+[![Release](https://github.com/DeanFeldman/DocSync/actions/workflows/release.yml/badge.svg)](https://github.com/DeanFeldman/DocSync/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/DeanFeldman/DocSync)](https://github.com/DeanFeldman/DocSync/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](#requirements)
 
-DocSync is a Windows desktop application for ap plying one confirmed edit across related Microsoft Word documents while preserving the original uploads.
+DocSync is a Windows desktop application for applying one confirmed edit across related Microsoft Word documents while preserving the original uploads.
 
-The application lets users upload a set of related `.docx` files, inspect each document, select repeated content, choose exactly which matches should change, preview the effect, and generate updated document versions.
+Users can upload a set of related `.docx` files, inspect and search their contents, select repeated text, choose exactly which matches should change, preview the result, and generate updated document versions.
 
-## Download the Windows application
-The latest Windows installer is available from the GitHub **Releases** page.
+## Download
+
+Download the latest Windows installer from the [GitHub Releases page](https://github.com/DeanFeldman/DocSync/releases/latest).
 
 Each release contains:
 
-- `DocSync-Setup-<version>.exe` — installer for that specific version.
-- `DocSync-Setup-latest.exe` — the newest available installer.
-- `SHA256SUMS.txt` — checksums for verifying the downloaded files.
+- `DocSync-Setup-<version>.exe` — the installer for a specific version.
+- `DocSync-Setup-latest.exe` — a copy of the newest installer.
+- `SHA256SUMS.txt` — SHA-256 checksums for verifying the downloads.
 
 For most users, download:
 
 ```text
 DocSync-Setup-latest.exe
-``` 
+```
+
+> The installer is not commercially code-signed yet, so Windows SmartScreen may display a warning.
+
+## Version 1.2.1
+
+DocSync `v1.2.1` is a maintenance release focused on making large documents and table-heavy previews faster and more reliable.
+
+### Improvements
+
+- Loads document preview pages progressively instead of rendering every page immediately.
+- Reduces database work when opening document sets containing many exact-match groups.
+- Keeps the total exact-match group count visible without loading every group into the initial response.
+- Improves table rendering when source tables use sparse row or column positions.
+- Uses browser content visibility to reduce the rendering cost of off-screen pages.
+- Preserves search navigation by loading the required page before scrolling to a result.
 
 ## Main features
 
+### Document sets
+
 - Upload between 2 and 20 related `.docx` files as a document set.
 - Reopen saved document sets from the local workspace library.
-- Add or remove documents in an existing set, or delete the complete set.
+- Add documents to an existing set.
+- Remove individual documents or delete a complete set.
 - Search extracted text across every document in the current set.
-- Open and scroll through each uploaded document.
+
+### Viewing and selection
+
+- Open and scroll through uploaded documents.
 - Use a Microsoft Word-generated layout preview when Word is installed.
 - Fall back to a structured selectable preview when Word rendering is unavailable.
-- Search visible document text.
+- Search visible document text and move between matches.
 - Select supported paragraphs, headings, list items, and non-empty table cells.
+
+### Coordinated editing
+
 - Find exact repeated content across multiple documents.
 - Include or exclude each matching location before applying an edit.
-- Preview every affected document and paragraph.
+- Preview every affected document and location.
 - Generate new versions without modifying the original uploads.
-- Continue editing the newly generated workspace versions.
-- Download one current document or the complete document set as a ZIP archive.
+- Continue editing newly generated workspace versions.
+
+### Downloads and history
+
+- Download one current document.
+- Download the complete document set as a ZIP archive.
 - Persist document sets, elements, link groups, generated versions, and edit metadata locally.
-- Build an installable Windows application with Electron Builder and NSIS.
-- Automatically publish tagged versions through GitHub Actions.
+
+## How it works
+
+1. Create a document set and upload related Word files.
+2. Open a document and switch to the selectable preview.
+3. Select a supported paragraph, list item, heading, or table cell.
+4. Review the exact matches found in the other documents.
+5. Choose which matching locations should be updated.
+6. Enter the replacement text and preview the changes.
+7. Generate new document versions.
+8. Download one document or the complete set.
+
+DocSync always keeps the original uploaded files unchanged.
 
 ## Technology
 
@@ -56,22 +98,29 @@ DocSync-Setup-latest.exe
 
 The packaged Windows application includes the Electron runtime and the frozen Python backend. Installed users do not need Node.js, npm, Python, or developer tools.
 
-## Requirements for development
+## Requirements
+
+### Installed application
+
+- Windows 10 or Windows 11
+- Microsoft Word desktop is recommended for the high-fidelity layout preview
+
+Microsoft Word is not required for the structured fallback preview.
+
+### Development
 
 - Windows 10 or Windows 11
 - Node.js 22 or newer
 - Python 3.11 or newer
 - npm
-- Microsoft Word desktop for the high-fidelity Word layout preview
-
-Microsoft Word is not required for the structured fallback preview.
+- Microsoft Word desktop for the high-fidelity layout preview
 
 ## Run locally
 
-Run the following commands from the repository root in Windows PowerShell:
+Run these commands from the repository root in Windows PowerShell:
 
 ```powershell
-cd "C:\path\to\DocuSync"
+cd "C:\path\to\DocSync"
 
 npm install
 python -m pip install -r apps/api/requirements.txt
@@ -109,7 +158,7 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8001
 ```
 
-The FastAPI documentation is available at:
+FastAPI documentation is then available at:
 
 ```text
 http://localhost:8001/docs
@@ -131,7 +180,7 @@ Then open:
 http://localhost:5173
 ```
 
-## Run tests
+## Tests
 
 Run all tests from the repository root:
 
@@ -142,9 +191,8 @@ npm test
 Run the backend tests directly:
 
 ```powershell
-cd apps/api
-python -m pip install -r requirements.txt
-python -m pytest
+python -m pip install -r apps/api/requirements.txt
+python -m pytest apps/api
 ```
 
 Build-check the frontend:
@@ -174,40 +222,57 @@ The installer is written to:
 release/v1/DocSync-Setup-<version>.exe
 ```
 
-A successfully packaged application may also appear under:
+The unpacked application may also appear under:
 
 ```text
 release/v1/win-unpacked/
 ```
 
-Do not commit the `release/` directory to Git. Installer files belong on the GitHub Releases page.
+Do not commit the `release/` directory. Installer files belong on the GitHub Releases page.
 
-## Automatic GitHub releases
+## Release process
 
-The release workflow runs whenever a tag beginning with `v` is pushed.
+The release workflow runs whenever a tag beginning with `v` is pushed. It reads the application version from the tag, so the source `package.json` version does not need to be changed manually before every release.
 
-Example:
+### Release `v1.2.1`
+
+From the repository root:
 
 ```powershell
 git switch main
 git pull origin main
+git status
 
-git tag -a v1.1.0 -m "DocSync v1.1.0"
-git push origin v1.1.0
+npm ci
+python -m pip install -r apps/api/requirements-build.txt
+npm test
+
+git tag -a v1.2.1 -m "DocSync v1.2.1"
+git push origin v1.2.1
 ```
 
-GitHub Actions will then:
+After the tag is pushed, open the repository's **Actions** tab and follow the **DocSync release** workflow.
+
+The workflow will:
 
 1. Check out the tagged source code.
-2. Install Node and Python dependencies.
+2. Install the Node.js and Python dependencies.
 3. Set the package version from the Git tag.
 4. Run the automated tests.
 5. Build the Windows installer.
-6. Generate a SHA-256 checksum.
-7. Create a permanent GitHub Release.
-8. Upload the installer and checksum file.
+6. Create the `DocSync-Setup-latest.exe` copy.
+7. Generate `SHA256SUMS.txt`.
+8. Create the GitHub Release and upload all release files.
 
-The workflow file is located at:
+Before announcing the release, confirm that the release contains:
+
+```text
+DocSync-Setup-1.2.1.exe
+DocSync-Setup-latest.exe
+SHA256SUMS.txt
+```
+
+The workflow is defined in:
 
 ```text
 .github/workflows/release.yml
@@ -217,17 +282,17 @@ Use semantic version tags:
 
 ```text
 v1.0.0  Initial stable release
-v1.1.0  New backwards-compatible features
-v1.1.1  Bug fixes
+v1.1.0  Backwards-compatible features
+v1.1.1  Backwards-compatible fixes
 v2.0.0  Breaking changes
 ```
 
-Do not reuse or move a published version tag. Create a new version tag for every release.
+Do not reuse or move a published version tag. Create a new tag for every release.
 
 ## Project structure
 
 ```text
-DocuSync/
+DocSync/
 ├── .github/
 │   └── workflows/
 │       ├── phase3-desktop.yml     Test and installer build workflow
@@ -251,23 +316,23 @@ DocuSync/
 ## Core API endpoints
 
 ```text
-GET  /api/health
-GET  /api/document-sets
-POST /api/document-sets
-GET  /api/document-sets/{document_set_id}
+GET    /api/health
+GET    /api/document-sets
+POST   /api/document-sets
+GET    /api/document-sets/{document_set_id}
 DELETE /api/document-sets/{document_set_id}
-POST /api/document-sets/{document_set_id}/documents
+POST   /api/document-sets/{document_set_id}/documents
 DELETE /api/document-sets/{document_set_id}/documents/{document_id}
-GET  /api/document-sets/{document_set_id}/search
-POST /api/documents/{document_id}/render
-GET  /api/document-versions/{version_id}/pages
-GET  /api/document-versions/{version_id}/rendered-file
-GET  /api/documents/{document_id}/download
-GET  /api/document-elements/{element_id}/matches
-POST /api/document-sets/{document_set_id}/preview
-POST /api/document-sets/{document_set_id}/generate
-GET  /api/document-sets/{document_set_id}/history
-GET  /api/generations/{generation_id}/download
+GET    /api/document-sets/{document_set_id}/search
+POST   /api/documents/{document_id}/render
+GET    /api/document-versions/{version_id}/pages
+GET    /api/document-versions/{version_id}/rendered-file
+GET    /api/documents/{document_id}/download
+GET    /api/document-elements/{element_id}/matches
+POST   /api/document-sets/{document_set_id}/preview
+POST   /api/document-sets/{document_set_id}/generate
+GET    /api/document-sets/{document_set_id}/history
+GET    /api/generations/{generation_id}/download
 ```
 
 ## Current limitations
@@ -276,20 +341,29 @@ GET  /api/generations/{generation_id}/download
 - Microsoft Word must be installed for high-fidelity layout rendering.
 - Direct text selection currently happens in the structured preview rather than over the Word layout.
 - Selectable content includes paragraphs, headings, list items, and non-empty top-level table cells.
-- Nested tables and complex merged-cell editing are not fully supported yet.
-- Tables, headers, footers, comments, tracked changes, text boxes, and other advanced Word elements are not fully editable yet.
-- Exact matching currently normalises whitespace and letter case.
+- Nested tables and complex merged-cell editing are not fully supported.
+- Headers, footers, comments, tracked changes, text boxes, and other advanced Word elements are not fully editable.
+- Exact matching normalises whitespace and letter case.
 - Replacements preserve the paragraph style and first text-run formatting, but complex mixed formatting is not guaranteed.
-- The current release is designed as a local desktop application and does not include organisation authentication or cloud storage.
-- The Windows installer is not yet commercially code-signed and may trigger a Microsoft SmartScreen warning.
+- The current release is a local desktop application and does not include organisation authentication or cloud storage.
+- The Windows installer is not commercially code-signed and may trigger a Microsoft SmartScreen warning.
 
-## Recommended next build order
+## Roadmap
 
-1. Add a read-only history screen.
-2. Add undo and version restoration.
-3. Add a richer before-and-after diff.
-4. Add direct element selection over the Word layout.
-5. Add authentication, PostgreSQL migrations, and cloud storage when moving beyond local use.
+Planned future improvements for DocSync include:
+
+- Add a read-only edit history screen.
+- Add undo functionality and version restoration.
+- Add a richer before-and-after comparison view.
+- Add direct element selection within the Microsoft Word layout preview.
+- Add a clear Word Preview button.
+- Show a visible badge indicating whether the user is viewing the Word - Preview or Structured Preview.
+- Improve application security, file validation, error handling, and protection of locally stored documents.
+- Add support for Linux and macOS where technically possible.
+- Add user authentication for a future hosted version.
+- Migrate from SQLite to PostgreSQL for hosted deployments.
+- Add secure cloud storage and document synchronisation for a future hosted version.
+- improve the UI with online tools to improve the experience
 
 ## Safety model
 
