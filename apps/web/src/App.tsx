@@ -48,6 +48,9 @@ type BusyAction =
   | "delete-set"
   | null;
 
+const INITIAL_VISIBLE_PAGES = 8;
+const VISIBLE_PAGE_BATCH = 8;
+
 function readableBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -85,9 +88,14 @@ function elementLocation(element: ElementLocation): string {
   }`;
 }
 
+type PositionedViewerElement = ViewerElement & {
+  preview_row_index?: number;
+  preview_column_index?: number;
+};
+
 type ViewerBlock =
   | { kind: "element"; element: ViewerElement }
-  | { kind: "table"; tableIndex: number; cells: ViewerElement[] };
+  | { kind: "table"; tableIndex: number; cells: PositionedViewerElement[] };
 
 function groupViewerElements(elements: ViewerElement[]): ViewerBlock[] {
   const blocks: ViewerBlock[] = [];
@@ -114,6 +122,23 @@ function groupViewerElements(elements: ViewerElement[]): ViewerBlock[] {
     }
 
     blocks.push({ kind: "element", element });
+  }
+
+  for (const block of blocks) {
+    if (block.kind !== "table") continue;
+
+    const usedRows = Array.from(
+      new Set(block.cells.map((cell) => cell.row_index ?? 0)),
+    ).sort((left, right) => left - right);
+    const usedColumns = Array.from(
+      new Set(block.cells.map((cell) => cell.column_index ?? 0)),
+    ).sort((left, right) => left - right);
+
+    block.cells = block.cells.map((cell) => ({
+      ...cell,
+      preview_row_index: usedRows.indexOf(cell.row_index ?? 0),
+      preview_column_index: usedColumns.indexOf(cell.column_index ?? 0),
+    }));
   }
 
   return blocks;
@@ -157,6 +182,7 @@ const [setNameTouched, setSetNameTouched] = useState(false);
   const [searchCursor, setSearchCursor] = useState(-1);
   const [zoom, setZoom] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
+  const [visiblePageCount, setVisiblePageCount] = useState(INITIAL_VISIBLE_PAGES);
   const [viewMode, setViewMode] = useState<"visual" | "select">("visual");
   const viewerScrollRef = useRef<HTMLDivElement>(null);
   const addDocumentsInputRef = useRef<HTMLInputElement>(null);
@@ -265,6 +291,7 @@ const [setNameTouched, setSetNameTouched] = useState(false);
   useEffect(() => {
     if (!viewer) return;
 
+    setVisiblePageCount(INITIAL_VISIBLE_PAGES);
     window.requestAnimationFrame(() => {
       viewerScrollRef.current?.scrollTo({
         top: 0,
@@ -295,6 +322,14 @@ const [setNameTouched, setSetNameTouched] = useState(false);
         }
       }
       setCurrentPage(closestPage);
+
+      const remainingScroll =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (remainingScroll < 1400) {
+        setVisiblePageCount((current) =>
+          Math.min(viewer?.pages.length ?? current + VISIBLE_PAGE_BATCH),
+        );
+      }
     }
 
     container.addEventListener("scroll", updateCurrentPage, { passive: true });
@@ -568,6 +603,9 @@ async function handleUpload(event: FormEvent) {
             .flatMap((page) => page.elements)
             .find((element) => element.id === targetElementId) ?? null;
         if (targetElement) {
+          setVisiblePageCount((current) =>
+            Math.max(current, targetElement.page_number),
+          );
           await selectElement(targetElement);
           window.setTimeout(() => {
             window.document
@@ -620,10 +658,15 @@ async function handleUpload(event: FormEvent) {
     if (searchMatches.length === 0) return;
     const next =
       (searchCursor + direction + searchMatches.length) % searchMatches.length;
+    const target = searchMatches[next];
+
     setSearchCursor(next);
-    document
-      .getElementById(`element-${searchMatches[next].id}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setVisiblePageCount((current) => Math.max(current, target.page_number));
+    window.setTimeout(() => {
+      document
+        .getElementById(`element-${target.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
   }
 
   async function handlePreview() {
@@ -704,7 +747,7 @@ async function handleUpload(event: FormEvent) {
     }
   }
   function renderViewerElement(
-    element: ViewerElement,
+    element: PositionedViewerElement,
     insideTable = false,
   ) {
     const isSearchMatch =
@@ -716,8 +759,11 @@ async function handleUpload(event: FormEvent) {
       element.row_index !== undefined &&
       element.column_index !== undefined
         ? {
-            gridRow: element.row_index + 1,
-            gridColumn: element.column_index + 1,
+            gridRow:
+              (element.preview_row_index ?? element.row_index) + 1,
+            gridColumn:
+              (element.preview_column_index ?? element.column_index) + 1,
+            minWidth: 0,
           }
         : undefined;
 
@@ -770,7 +816,7 @@ const canUpload = files.length >= 2 && !busyAction;
         </a>
 
         <div className="topbar-actions">
-          <span className="release-pill">Desktop v1</span>
+          {/* <span className="release-pill">Desktop v1</span> */}
           {documentSet && (
             <button type="button" className="quiet-button" onClick={() => resetWorkspace()}>
               Home
@@ -1018,7 +1064,7 @@ const canUpload = files.length >= 2 && !busyAction;
 
               <div className="set-summary">
                 <strong>{documentSet.documents.length}</strong><span>documents</span>
-                <strong>{documentSet.link_groups.length}</strong><span>exact groups</span>
+                <strong>{documentSet.link_group_count ?? documentSet.link_groups.length}</strong><span>exact groups</span>
               </div>
 
               <button
@@ -1165,7 +1211,7 @@ const canUpload = files.length >= 2 && !busyAction;
                   <>
                     <div className="render-notice"><strong>Preview note</strong><span>{viewer.notice}</span></div>
                     <div className="page-stack" style={{ "--page-zoom": zoom } as CSSProperties}>
-                      {viewer.pages.map((page) => (
+                      {viewer.pages.slice(0, visiblePageCount).map((page) => (
                         <section className="document-page" key={page.page_number} data-page-number={page.page_number} aria-label={`Page ${page.page_number}`}>
                           <span className="page-label">Page {page.page_number}</span>
                           <div className="page-content">
@@ -1188,7 +1234,10 @@ const canUpload = files.length >= 2 && !busyAction;
                                         gridTemplateColumns: `repeat(${
                                           Math.max(
                                             ...block.cells.map(
-                                              (cell) => (cell.column_index ?? 0) + 1,
+                                              (cell) =>
+                                                (cell.preview_column_index ??
+                                                  cell.column_index ??
+                                                  0) + 1,
                                             ),
                                           )
                                         }, minmax(120px, 1fr))`,

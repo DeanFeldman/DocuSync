@@ -97,6 +97,7 @@ export interface DocumentSetResponse {
   name: string;
   created_at: string;
   documents: DocumentSummary[];
+  link_group_count: number;
   link_groups: LinkGroup[];
 }
 

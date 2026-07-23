@@ -42,6 +42,7 @@ ORDERED_TABLE_CELL_STYLE_PATTERN = re.compile(
 ORDERED_BODY_STYLE_PATTERN = re.compile(r"^body_order:(\d+):(.*)$", re.DOTALL)
 PAGE_LAYOUT_UNITS = 18
 WORD_RENDER_LOCK = threading.Lock()
+LARGE_SET_LINK_GROUP_LIMIT = 100
 
 def utc_isoformat(value: datetime) -> str:
     """Return a consistent timezone-aware UTC timestamp."""
@@ -545,7 +546,6 @@ def _create_exact_link_groups(session: Session, document_set_id: str) -> None:
         select(DocumentElement)
         .join(DocumentRecord)
         .where(DocumentRecord.document_set_id == document_set_id)
-        .options(selectinload(DocumentElement.document))
     ).all()
 
     by_text: dict[tuple[str, str], list[DocumentElement]] = defaultdict(list)
@@ -555,10 +555,12 @@ def _create_exact_link_groups(session: Session, document_set_id: str) -> None:
                 (element.normalized_text, element_type_for_style(element.style_name))
             ].append(element)
 
+    records: list[object] = []
     for (normalized_text, _element_type), matches in by_text.items():
         distinct_documents = {match.document_id for match in matches}
         if len(distinct_documents) < 2:
             continue
+
         group = LinkGroup(
             id=new_id(),
             document_set_id=document_set_id,
@@ -566,10 +568,14 @@ def _create_exact_link_groups(session: Session, document_set_id: str) -> None:
             normalized_text=normalized_text,
             match_type="exact",
         )
-        session.add(group)
-        session.flush()
-        for element in matches:
-            session.add(LinkMember(id=new_id(), link_group=group, element=element))
+        records.append(group)
+        records.extend(
+            LinkMember(id=new_id(), link_group=group, element=element)
+            for element in matches
+        )
+
+    if records:
+        session.add_all(records)
 
 
 def _rebuild_exact_link_groups(session: Session, document_set_id: str) -> None:
@@ -628,28 +634,71 @@ def list_document_sets(session: Session) -> dict:
     
     
 def get_document_set_or_404(session: Session, document_set_id: str) -> DocumentSet:
-    document_set = session.scalar(
-        select(DocumentSet)
-        .where(DocumentSet.id == document_set_id)
-        .options(
-            selectinload(DocumentSet.documents).selectinload(DocumentRecord.elements),
+    group_count = int(
+        session.scalar(
+            select(func.count(LinkGroup.id)).where(
+                LinkGroup.document_set_id == document_set_id
+            )
+        )
+        or 0
+    )
+    element_count_rows = session.execute(
+        select(DocumentElement.document_id, func.count(DocumentElement.id))
+        .join(DocumentRecord, DocumentElement.document_id == DocumentRecord.id)
+        .where(DocumentRecord.document_set_id == document_set_id)
+        .group_by(DocumentElement.document_id)
+    ).all()
+
+    loader_options = [selectinload(DocumentSet.documents)]
+    if group_count <= LARGE_SET_LINK_GROUP_LIMIT:
+        loader_options.append(
             selectinload(DocumentSet.link_groups)
             .selectinload(LinkGroup.members)
             .selectinload(LinkMember.element)
-            .selectinload(DocumentElement.document),
+            .selectinload(DocumentElement.document)
         )
+
+    document_set = session.scalar(
+        select(DocumentSet)
+        .where(DocumentSet.id == document_set_id)
+        .options(*loader_options)
     )
     if document_set is None:
         raise HTTPException(status_code=404, detail="Document set not found.")
+
+    document_set._docsync_link_group_count = group_count
+    document_set._docsync_element_counts = {
+        document_id: int(element_count)
+        for document_id, element_count in element_count_rows
+    }
     return document_set
 
 
 def serialize_document_set(document_set: DocumentSet) -> dict:
     documents = sorted(document_set.documents, key=lambda item: item.original_name.casefold())
-    groups = sorted(
-        document_set.link_groups,
-        key=lambda item: (-len(item.members), item.representative_text.casefold()),
+
+    known_group_count = getattr(document_set, "_docsync_link_group_count", None)
+    group_count = (
+        int(known_group_count)
+        if known_group_count is not None
+        else len(document_set.link_groups)
     )
+    groups = (
+        sorted(
+            document_set.link_groups,
+            key=lambda item: (-len(item.members), item.representative_text.casefold()),
+        )
+        if group_count <= LARGE_SET_LINK_GROUP_LIMIT
+        else []
+    )
+
+    element_counts = getattr(document_set, "_docsync_element_counts", None)
+
+    def element_count(document: DocumentRecord) -> int:
+        if element_counts is not None:
+            return int(element_counts.get(document.id, 0))
+        return len(document.elements)
+
     return {
         "id": document_set.id,
         "name": document_set.name,
@@ -660,11 +709,12 @@ def serialize_document_set(document_set: DocumentSet) -> dict:
                 "version_id": document.id,
                 "name": document.original_name,
                 "checksum_sha256": document.checksum_sha256,
-                "element_count": len(document.elements),
+                "element_count": element_count(document),
                 "view_url": f"/api/document-versions/{document.id}/pages",
             }
             for document in documents
         ],
+        "link_group_count": group_count,
         "link_groups": [serialize_link_group(group) for group in groups],
     }
 
